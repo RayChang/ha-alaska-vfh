@@ -1,0 +1,135 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "This device is already configured."
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the gateway.",
+      "invalid_slave": "Invalid device ID (must be 1–255).",
+      "no_response": "No response from device. Check device ID and network connection."
+    },
+    "step": {
+      "device": {
+        "data": {
+          "name": "Device name",
+          "slave_id": "Device ID (1–255)"
+        },
+        "title": "Device Information"
+      },
+      "user": {
+        "data": {
+          "host": "Gateway hostname or IP",
+          "port": "Port"
+        },
+        "title": "Modbus Gateway"
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "problem": {
+        "name": "Problem"
+      }
+    },
+    "button": {
+      "mode_1": {
+        "name": "Mode: High heat"
+      },
+      "mode_2": {
+        "name": "Mode: Heat & dry"
+      },
+      "mode_3": {
+        "name": "Mode: Fast cool air"
+      },
+      "mode_4": {
+        "name": "Mode: Eco dry"
+      },
+      "mode_5": {
+        "name": "Mode: Ventilation (high)"
+      },
+      "mode_6": {
+        "name": "Mode: Ventilation (low)"
+      },
+      "mode_7": {
+        "name": "Mode: 24h ventilation"
+      },
+      "mode_12": {
+        "name": "Mode: Off"
+      },
+      "reset": {
+        "name": "Reset"
+      }
+    },
+    "number": {
+      "work_time": {
+        "name": "Work time"
+      }
+    },
+    "select": {
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "cool_fast": "Fast cool air",
+          "dry_eco": "Eco dry",
+          "heat_dry": "Heat & dry",
+          "heat_high": "High heat",
+          "off": "Off",
+          "vent_24h": "24h ventilation",
+          "vent_high": "Ventilation (high)",
+          "vent_low": "Ventilation (low)"
+        }
+      }
+    },
+    "sensor": {
+      "feedback_status": {
+        "name": "Feedback status",
+        "state": {
+          "motor_open": "Motor open",
+          "ok": "OK",
+          "relay_fault": "Power relay fault"
+        }
+      },
+      "remaining_time": {
+        "name": "Remaining time"
+      },
+      "system_status": {
+        "name": "System status",
+        "state": {
+          "ok": "OK",
+          "overheat": "Overheat / filter needs replacing",
+          "temp_sensor_open": "Temperature sensor open"
+        }
+      },
+      "usage_hours": {
+        "name": "Usage hours"
+      },
+      "vent_24h_remaining": {
+        "name": "24h ventilation remaining"
+      }
+    }
+  },
+  "exceptions": {
+    "communication_error": {
+      "message": "Communication error: {error}"
+    },
+    "modbus_exception": {
+      "message": "Modbus exception {code}"
+    },
+    "timeout": {
+      "message": "Device response timeout"
+    },
+    "write_failed": {
+      "message": "Failed to write to device: Modbus exception {code}"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "scan_interval": "Polling interval (seconds)"
+        },
+        "title": "Options"
+      }
+    }
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "此裝置已設定。"
+    },
+    "error": {
+      "cannot_connect": "無法連接到閘道。",
+      "invalid_slave": "無效的裝置ID（必須為1–255）。",
+      "no_response": "裝置無回應。請檢查裝置ID和網路連接。"
+    },
+    "step": {
+      "device": {
+        "data": {
+          "name": "裝置名稱",
+          "slave_id": "裝置ID（1–255）"
+        },
+        "title": "裝置資訊"
+      },
+      "user": {
+        "data": {
+          "host": "閘道主機名或IP",
+          "port": "連接埠"
+        },
+        "title": "Modbus閘道"
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "problem": {
+        "name": "問題"
+      }
+    },
+    "button": {
+      "mode_1": {
+        "name": "模式：高溫暖房"
+      },
+      "mode_2": {
+        "name": "模式：暖房乾燥"
+      },
+      "mode_3": {
+        "name": "模式：高速涼風"
+      },
+      "mode_4": {
+        "name": "模式：省電乾燥"
+      },
+      "mode_5": {
+        "name": "模式：換氣強"
+      },
+      "mode_6": {
+        "name": "模式：換氣弱"
+      },
+      "mode_7": {
+        "name": "模式：連續 24 小時換氣"
+      },
+      "mode_12": {
+        "name": "模式：停止"
+      },
+      "reset": {
+        "name": "重置"
+      }
+    },
+    "number": {
+      "work_time": {
+        "name": "運作時間"
+      }
+    },
+    "select": {
+      "mode": {
+        "name": "模式",
+        "state": {
+          "cool_fast": "高速涼風",
+          "dry_eco": "省電乾燥",
+          "heat_dry": "暖房乾燥",
+          "heat_high": "高溫暖房",
+          "off": "停止",
+          "vent_24h": "連續 24 小時換氣",
+          "vent_high": "換氣強",
+          "vent_low": "換氣弱"
+        }
+      }
+    },
+    "sensor": {
+      "feedback_status": {
+        "name": "反饋狀態",
+        "state": {
+          "motor_open": "馬達開路",
+          "ok": "正常",
+          "relay_fault": "電源繼電器故障"
+        }
+      },
+      "remaining_time": {
+        "name": "剩餘時間"
+      },
+      "system_status": {
+        "name": "系統狀態",
+        "state": {
+          "ok": "正常",
+          "overheat": "溫度過高／濾網需更換",
+          "temp_sensor_open": "溫度感測器開路"
+        }
+      },
+      "usage_hours": {
+        "name": "使用時數"
+      },
+      "vent_24h_remaining": {
+        "name": "24小時換氣剩餘時間"
+      }
+    }
+  },
+  "exceptions": {
+    "communication_error": {
+      "message": "通訊錯誤：{error}"
+    },
+    "modbus_exception": {
+      "message": "Modbus 例外 {code}"
+    },
+    "timeout": {
+      "message": "裝置回應逾時"
+    },
+    "write_failed": {
+      "message": "寫入裝置失敗：Modbus 例外 {code}"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "scan_interval": "輪詢間隔（秒）"
+        },
+        "title": "選項"
+      }
+    }
+  }
+}

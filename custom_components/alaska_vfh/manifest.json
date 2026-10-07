@@ -1,0 +1,12 @@
+{
+  "domain": "alaska_vfh",
+  "name": "Alaska Bath Heater",
+  "codeowners": ["@RayChang"],
+  "config_flow": true,
+  "dependencies": ["modbus"],
+  "documentation": "https://github.com/RayChang/ha-alaska-vfh",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/RayChang/ha-alaska-vfh/issues",
+  "version": "0.1.0"
+}

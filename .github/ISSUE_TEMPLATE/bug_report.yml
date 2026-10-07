@@ -1,0 +1,70 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. This is an unofficial integration. Please do not post
+        passwords or other secrets. The diagnostics download redacts the gateway host
+        but includes the port, device id and the name you gave the heater.
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+      placeholder: "2026.4.4"
+    validations:
+      required: true
+  - type: input
+    id: integration_version
+    attributes:
+      label: Integration version
+      description: Shown in HACS, or `version` in `manifest.json`.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: heater_model
+    attributes:
+      label: Heater model
+      placeholder: "Alaska 300BKP"
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Heater firmware version
+      description: The device page in Home Assistant shows it as the firmware / software version.
+      placeholder: "2.11"
+    validations:
+      required: true
+  - type: input
+    id: gateway
+    attributes:
+      label: Modbus TCP gateway
+      description: Make and model, and its serial settings (baud rate, parity) and protocol mode.
+      placeholder: "Waveshare RS485 to ETH (B), 9600 8N1, Modbus TCP to RTU"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: |
+        Download the diagnostics file (Settings → Devices & services → Alaska Bath Heater →
+        the three-dot menu of the entry → Download diagnostics) and attach it here.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: Enable debug logging for `custom_components.alaska_vfh` if you can.
+      render: text
