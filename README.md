@@ -82,7 +82,7 @@ About the gateway:
   protocol "Modbus TCP to RTU", and reachable on a TCP port (commonly 4196 or 502).
 - RS-485 wiring: D+ to D+ and D- to D- on every device, common ground, a 120 Ω
   terminator at each end of long runs.
-- Home Assistant **2026.4** or newer.
+- Home Assistant **2026.4** or newer (tested on 2026.4 and 2026.9; the 300BKP was verified on hardware with 2026.9).
 
 ## Installation
 

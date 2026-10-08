@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.2.0] - 2026-10-08
 
+Verified on hardware with a 300BKP on Home Assistant 2026.9. The Home Assistant level
+tests run in CI on 2026.4 (the minimum) and 2026.9.
+
 ### Added
 
 - Multi-model support: the heater model is chosen when a device is added. New

@@ -185,6 +185,7 @@ class AlaskaConfigFlow(ConfigFlow, domain=DOMAIN):
         for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
             suffix = entity.unique_id.removeprefix(prefix)
             if suffix.startswith("mode_"):
+                # Retired records are bounded: one per model and mode number.
                 registry.async_update_entity(
                     entity.entity_id,
                     new_unique_id=f"{prefix}retired_{suffix}_{old_model}",
