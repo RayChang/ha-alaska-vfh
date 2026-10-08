@@ -31,6 +31,8 @@ from .const import (
 )
 from .hub import AlaskaHub, AlaskaHubError
 from .models import (
+    AIR_DIRECTIONS,
+    AIR_ZONES,
     INFO_BLOCK_COUNT,
     MIN_WORK_MINUTES,
     REG_AIR_DIRECTION,
@@ -61,8 +63,12 @@ class HeaterState:
 
 
 def format_firmware(register: int) -> str:
-    """Format register 4 (hi byte major, lo byte minor), e.g. 0x020B -> 2.11."""
+    """Format the firmware register (hi byte major, lo byte minor): 0x020B -> 2.11."""
     return f"{register >> 8}.{register & 0xFF}"
+
+
+# Gateway path unavailable / target failed to respond: a timeout in disguise
+_GATEWAY_EXCEPTION_CODES = frozenset({0x0A, 0x0B})
 
 
 def _translated_error(err: AlaskaHubError, *, write: bool) -> HomeAssistantError:
@@ -128,7 +134,8 @@ class AlaskaCoordinator(DataUpdateCoordinator[HeaterState]):
 
         The verified 300BKP reads the identification block 0..5 in one request.
         Other models read single registers, because registers 3/4 may not exist
-        on them; a Modbus exception on such a read only leaves the value unknown.
+        on them; a device Modbus exception on such a read only leaves the value unknown
+        (gateway exceptions 0x0A / 0x0B are timeouts and fail the setup).
         """
         profile = self.profile
         if profile.info_block_read:
@@ -147,13 +154,13 @@ class AlaskaCoordinator(DataUpdateCoordinator[HeaterState]):
             self.heater_type = await self._async_read_optional(REG_HEATER_TYPE)
 
     async def _async_read_optional(self, register: int) -> int | None:
-        """Read one register; a Modbus exception gives None, other errors raise."""
+        """Read one register; a device exception gives None, other errors raise."""
         try:
             return (
                 await self.hub.async_read_holding_registers(register, 1, self.slave_id)
             )[0]
         except AlaskaHubError as err:
-            if err.kind != "modbus":
+            if err.kind != "modbus" or err.code in _GATEWAY_EXCEPTION_CODES:
                 raise _translated_error(err, write=False) from err
             _LOGGER.debug(
                 "Register %s of %s (slave %s) not readable: %s",
@@ -194,16 +201,16 @@ class AlaskaCoordinator(DataUpdateCoordinator[HeaterState]):
     async def _async_set_mode(self, mode: int, minutes: int | None) -> None:
         """Write a work mode; models.plan_mode_write decides FC06 or FC16."""
         wanted = self.work_time if minutes is None else minutes
-        kind, payload = plan_mode_write(self.profile, mode, wanted)
+        plan = plan_mode_write(self.profile, mode, wanted)
         work_time_raw = 0
-        if kind == "fc06":
+        if plan[0] == "fc06":
             await self._async_write(
-                self.hub.async_write_register(REG_MODE, mode, self.slave_id), mode
+                self.hub.async_write_register(REG_MODE, plan[1], self.slave_id), mode
             )
         else:
-            work_time_raw = payload[1]
+            work_time_raw = plan[1][1]
             await self._async_write(
-                self.hub.async_write_registers(REG_MODE, payload, self.slave_id),
+                self.hub.async_write_registers(REG_MODE, plan[1], self.slave_id),
                 mode,
             )
         if self.data is not None:
@@ -248,11 +255,14 @@ class AlaskaCoordinator(DataUpdateCoordinator[HeaterState]):
 
     async def async_reset_filter(self) -> None:
         """Clear the "clean filter" message (300SRP)."""
+        self._require(self.profile.has_filter_reset)
         await self._async_write_single(REG_USAGE_HOURS, RESET_MAGIC)
         await self.async_request_refresh()
 
     async def async_set_air_zone(self, value: int) -> None:
         """Set the air zone (300SRP; the device only accepts it while running)."""
+        self._require(self.profile.has_air_controls)
+        self._require(value in AIR_ZONES, value)
         await self._async_write_single(REG_AIR_ZONE, value)
         if self.data is not None:
             self.async_set_updated_data(replace(self.data, air_zone=value))
@@ -260,10 +270,28 @@ class AlaskaCoordinator(DataUpdateCoordinator[HeaterState]):
 
     async def async_set_air_direction(self, value: int) -> None:
         """Set the air direction (300SRP; the device only accepts it while running)."""
+        self._require(self.profile.has_air_controls)
+        self._require(value in AIR_DIRECTIONS, value)
         await self._async_write_single(REG_AIR_DIRECTION, value)
         if self.data is not None:
             self.async_set_updated_data(replace(self.data, air_direction=value))
         await self.async_request_refresh()
+
+    def _require(self, allowed: bool, value: int | None = None) -> None:
+        """Refuse a write the model does not support or a value out of range."""
+        if allowed:
+            return
+        if value is None:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="unsupported_function",
+                translation_placeholders={"model": self.profile.label},
+            )
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="invalid_value",
+            translation_placeholders={"value": str(value)},
+        )
 
     async def _async_write_single(self, register: int, value: int) -> None:
         """Write one register with FC06 under the write lock."""

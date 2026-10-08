@@ -300,7 +300,7 @@ def plan_mode_write(profile: ModelProfile, mode: int, minutes: int) -> ModeWrite
         raise ValueError(f"Unsupported mode {mode} for model {profile.key}")
     if mode in profile.fc06_modes:
         return ("fc06", mode)
-    clamped = max(MIN_WORK_MINUTES, min(minutes, profile.mode_max_minutes[mode]))
+    clamped = max(MIN_WORK_MINUTES, min(int(minutes), profile.mode_max_minutes[mode]))
     return ("fc16", [mode, encode_work_time(clamped)])
 
 

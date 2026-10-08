@@ -12,7 +12,7 @@ from homeassistant.config_entries import (
     OptionsFlowWithReload,
 )
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
@@ -38,7 +38,7 @@ from .models import DEFAULT_MODEL, INFO_BLOCK_COUNT, PROFILES, get_profile
 
 
 class AlaskaConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Three-step flow: gateway, heater model, then heater."""
+    """Three-step flow (gateway, heater model, heater) plus a reconfigure step."""
 
     VERSION = 1
     MINOR_VERSION = 2
@@ -107,15 +107,7 @@ class AlaskaConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="model",
             data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_MODEL, default=self._model): SelectSelector(
-                        SelectSelectorConfig(
-                            options=list(PROFILES),
-                            mode=SelectSelectorMode.DROPDOWN,
-                            translation_key="model",
-                        )
-                    )
-                }
+                {vol.Required(CONF_MODEL, default=self._model): _model_selector()}
             ),
         )
 
@@ -131,7 +123,9 @@ class AlaskaConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 await self.async_set_unique_id(f"{self._host}:{self._port}:{slave_id}")
                 self._abort_if_unique_id_configured()
-                error = await self._async_validate(slave_id)
+                error = await _async_validate(
+                    self.hass, self._host, self._port, slave_id, self._model
+                )
                 if error is None:
                     return self.async_create_entry(
                         title=user_input[CONF_NAME],
@@ -165,23 +159,98 @@ class AlaskaConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def _async_validate(self, slave_id: int) -> str | None:
-        """Read the device id; return an error key or None when the device answers.
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Change host, port, device id and model of an existing entry."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            host = user_input[CONF_HOST].strip().lower()
+            port = int(user_input[CONF_PORT])
+            slave_id = int(user_input[CONF_SLAVE_ID])
+            model = user_input[CONF_MODEL]
+            unique_id = f"{host}:{port}:{slave_id}"
+            other = self.hass.config_entries.async_entry_for_domain_unique_id(
+                DOMAIN, unique_id
+            )
+            if other is not None and other.entry_id != entry.entry_id:
+                return self.async_abort(reason="already_configured")
+            if not host or not 1 <= port <= 65535:
+                errors["base"] = "cannot_connect"
+            elif not 1 <= slave_id <= 255:
+                errors[CONF_SLAVE_ID] = "invalid_slave"
+            else:
+                error = await _async_validate(self.hass, host, port, slave_id, model)
+                if error is None:
+                    return self.async_update_reload_and_abort(
+                        entry,
+                        unique_id=unique_id,
+                        data_updates={
+                            CONF_HOST: host,
+                            CONF_PORT: port,
+                            CONF_SLAVE_ID: slave_id,
+                            CONF_MODEL: model,
+                        },
+                    )
+                errors[CONF_SLAVE_ID if error == "invalid_slave" else "base"] = error
+        current = {**entry.data, **(user_input or {})}
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_HOST, default=current[CONF_HOST]): str,
+                    vol.Required(CONF_PORT, default=current[CONF_PORT]): NumberSelector(
+                        NumberSelectorConfig(
+                            min=1, max=65535, step=1, mode=NumberSelectorMode.BOX
+                        )
+                    ),
+                    vol.Required(
+                        CONF_SLAVE_ID, default=current[CONF_SLAVE_ID]
+                    ): NumberSelector(
+                        NumberSelectorConfig(
+                            min=1, max=255, step=1, mode=NumberSelectorMode.BOX
+                        )
+                    ),
+                    vol.Required(
+                        CONF_MODEL, default=current[CONF_MODEL]
+                    ): _model_selector(),
+                }
+            ),
+            errors=errors,
+        )
 
-        The verified 300BKP reads registers 0..5 in one request; other models read
-        register 0 only, because registers 3/4 may not exist on them.
-        """
-        count = INFO_BLOCK_COUNT if get_profile(self._model).info_block_read else 1
-        hub = async_acquire_hub(self.hass, self._host, self._port)
-        try:
-            registers = await hub.async_read_holding_registers(0, count, slave_id)
-        except AlaskaHubError as err:
-            return "cannot_connect" if err.kind == "connect" else "no_response"
-        finally:
-            async_release_hub(self.hass, hub)
-        if registers[REG_DEVICE_ID] != slave_id:
-            return "invalid_slave"
-        return None
+
+def _model_selector() -> SelectSelector:
+    """Dropdown of the supported heater models."""
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=list(PROFILES),
+            mode=SelectSelectorMode.DROPDOWN,
+            translation_key="model",
+        )
+    )
+
+
+async def _async_validate(
+    hass: HomeAssistant, host: str, port: int, slave_id: int, model: str
+) -> str | None:
+    """Read the device id; return an error key or None when the device answers.
+
+    The verified 300BKP reads registers 0..5 in one request; other models read
+    register 0 only, because register 3 may not exist on them.
+    """
+    count = INFO_BLOCK_COUNT if get_profile(model).info_block_read else 1
+    hub = async_acquire_hub(hass, host, port)
+    try:
+        registers = await hub.async_read_holding_registers(0, count, slave_id)
+    except AlaskaHubError as err:
+        return "cannot_connect" if err.kind == "connect" else "no_response"
+    finally:
+        async_release_hub(hass, hub)
+    if registers[REG_DEVICE_ID] != slave_id:
+        return "invalid_slave"
+    return None
 
 
 class AlaskaOptionsFlow(OptionsFlowWithReload):

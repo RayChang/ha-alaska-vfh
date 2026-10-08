@@ -23,6 +23,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Reconfigure flow: host, port, device id and model of an existing entry can be changed
+  in one form (validated like the initial setup); entity ids are kept.
+- The model step warns that a wrong model can make the Off button ineffective.
+- Write guards: air zone, air direction and filter reset are refused (translated error)
+  on models without them or for out-of-range values; an unknown model in a config
+  entry fails the setup with a clear message instead of a traceback.
+- Gateway Modbus exceptions 0x0A / 0x0B on the optional identification reads now fail
+  the setup (retry) instead of leaving the firmware unknown.
 - Mode button translation keys are now named after the mode (`mode_heat_high`)
   instead of the register value. The 300BKP texts, entity unique ids and behaviour are
   unchanged.

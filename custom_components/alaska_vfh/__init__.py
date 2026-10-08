@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
+from homeassistant.exceptions import (
+    ConfigEntryError,
+    ConfigEntryNotReady,
+    HomeAssistantError,
+)
 from homeassistant.helpers import device_registry as dr
 
-from .const import CONF_MODEL
+from .const import CONF_MODEL, DOMAIN
 from .coordinator import AlaskaConfigEntry, AlaskaCoordinator
 from .hub import async_acquire_hub, async_release_hub
-from .models import DEFAULT_MODEL
+from .models import DEFAULT_MODEL, PROFILES
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
@@ -34,6 +38,13 @@ async def async_migrate_entry(hass: HomeAssistant, entry: AlaskaConfigEntry) -> 
 
 async def async_setup_entry(hass: HomeAssistant, entry: AlaskaConfigEntry) -> bool:
     """Set up a heater from a config entry."""
+    if entry.data[CONF_MODEL] not in PROFILES:
+        # Never guess a model: a wrong profile can write the wrong mode
+        raise ConfigEntryError(
+            translation_domain=DOMAIN,
+            translation_key="unknown_model",
+            translation_placeholders={"model": str(entry.data[CONF_MODEL])},
+        )
     hub = async_acquire_hub(hass, entry.data[CONF_HOST], entry.data[CONF_PORT])
     coordinator = AlaskaCoordinator(hass, entry, hub)
     setup_ok = False

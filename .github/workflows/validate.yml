@@ -40,3 +40,19 @@ jobs:
         run: |
           pip install pytest
           pytest tests -q
+
+  tests-homeassistant:
+    # pytest-homeassistant-custom-component 0.13.325 pins Home Assistant 2026.4.4
+    # (the minimum in hacs.json is 2026.4.0) and needs Python 3.14.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Run Home Assistant level tests
+        run: |
+          pip install pytest-homeassistant-custom-component==0.13.325 pymodbus
+          pytest tests -q -o asyncio_mode=auto

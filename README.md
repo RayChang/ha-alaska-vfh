@@ -53,11 +53,11 @@ separately**:
 
 | # | What you need | Why |
 |---|---------------|-----|
-| 1 | The manufacturer's **RS-485 control module** for the 300BKP (阿拉斯加 RS-485 控制模組) | An optional accessory that is not included with the heater. It plugs into the heater's controller with a ribbon cable and exposes the heater as a Modbus RTU device on an RS-485 bus. Ask Alaska or your dealer for it; see the [module manual](https://www.alaska.com.tw/pdf/69638) (Chinese). |
+| 1 | The manufacturer's **RS-485 control module** for your heater (阿拉斯加 RS-485 控制模組) | An optional accessory that is not included with the heater. It plugs into the heater's controller with a ribbon cable and exposes the heater as a Modbus RTU device on an RS-485 bus. Ask Alaska or your dealer for it; see the [module manual](https://www.alaska.com.tw/pdf/69638) (Chinese; it covers all models listed above). |
 | 2 | A **Modbus TCP to RTU gateway** (an RS-485 to Ethernet or Wi-Fi converter) | Home Assistant reaches the heater over the network with Modbus TCP, while the module only speaks Modbus RTU on a serial line. The gateway translates between the two. |
 
 ```
-Alaska 300BKP ── ribbon cable ── RS-485 module ── D+ / D- ── gateway ── Ethernet / Wi-Fi ── Home Assistant
+Alaska heater ── ribbon cable ── RS-485 module ── D+ / D- ── gateway ── Ethernet / Wi-Fi ── Home Assistant
                                               Modbus RTU, 9600 8N1        Modbus TCP
 ```
 
@@ -113,7 +113,12 @@ Copy the `custom_components/alaska_vfh` folder of this repository into the
    the device answers and that the id matches.
 5. Repeat for every further heater, each with its own device id and model. Heaters on
    the same gateway share a single TCP connection.
-6. Optional: **Configure** on the integration entry sets the polling interval
+6. To change the gateway, device id or model of an existing device, use the
+   three-dot menu of the entry → **Reconfigure**. The form is validated like the
+   initial setup. Entity ids are kept, but changing the model changes which mode
+   entities exist (entities of modes the new model lacks become unavailable and can
+   be deleted).
+7. Optional: **Configure** on the integration entry sets the polling interval
    (5–60 s, default 10 s).
 
 ## Entities
@@ -135,9 +140,9 @@ entity name below (for a device called "Alaska 300BKP", for example
 | Feedback status | `sensor` | Diagnostic: OK / power relay fault / motor open (the 300BRP and 300SRP have no relay fault) |
 | Problem | `binary_sensor` | On when the system or feedback status is not OK |
 | Heater element type | `sensor` | **968 models only.** Diagnostic: PTC / carbon |
-| Air zone | `select` | **300SRP only.** Off / diffuse / focus |
+| Air zone | `select` | **300SRP only.** Off / diffuse / focus (the manual mentions only diffuse or focus as settable while running) |
 | Air direction | `select` | **300SRP only.** 65° to 125° in 15° steps, or auto swing; shows no option while the louvre is off |
-| Clear filter message | `button` | **300SRP only.** Clears the "clean filter" message (writes the reset word to the usage hours register). Configuration category |
+| Clear filter message | `button` | **300SRP only.** Clears the "clean filter" message (writes the reset word to the usage hours register); the heater accepts it only while the system status is overheat or filter needs replacing. Configuration category |
 
 On the **300SRP** the system status is a bit field, so it can also report "Filter
 needs replacing", "Overheat" (without the filter) and "Multiple faults". The manual
@@ -179,10 +184,13 @@ Entity names are translated (English and Traditional Chinese).
 - **No response from device**: the device id does not match the DIP switches, the
   module is unpowered or not wired, or the id is 0. Check D+/D- polarity and the
   gateway serial settings (9600 8N1).
-- **Wrong or odd modes**: you probably picked the wrong model. Remove the entry and add it again with the right one.
+- **Wrong or odd modes, or Off does not stop the heater**: you probably picked the
+  wrong model, and the Off button may then not stop the heater. Stop it with the wall
+  panel and correct the model with **Reconfigure** (see above).
 - **Modbus exception 01** when you try to start a mode: something other than this
   integration is writing mode registers with a single-register write. Use the entities
-  of this integration instead.
+  of this integration instead. On an experimental model the profile itself may be
+  wrong; please open a Model verification report.
 - **Entities unavailable**: the heater stopped answering; check power, wiring and the
   gateway. The entities recover on their own after a successful poll.
 - Download **diagnostics** from the device page when you open an issue. The gateway host is redacted; the port, device id, the name you gave the heater and the last raw register values are included.
@@ -201,6 +209,8 @@ Entity names are translated (English and Traditional Chinese).
   手冊實作，尚未在實機上驗證，歡迎回報。各機型的模式編號不同（同一個數值在不同機型代表
   不同模式），請務必選對機型，詳見 [docs/PROTOCOL.md](docs/PROTOCOL.md)。
 - 300SRP 另有風域、風向選擇與「清除濾網提示」按鈕；968 系列另有發熱體類型感測器。
+- 型號選錯時，模式會對應錯誤，「停止」按鈕可能無法停止暖風機（請用牆上面板停止）。可在整合項目的選單
+  選「重新設定」修改閘道、裝置編號與型號（實體 ID 不變，但可用的模式實體會隨型號改變）。
 - 協助驗證：若您有實驗性機型，請逐一試過所有模式，並開一則「Model verification report」
   issue，附上實際行為與診斷檔。
 - **需另外添購的硬體**（暖風機本身沒有網路或 RS-485 介面，缺一不可）：

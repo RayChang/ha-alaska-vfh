@@ -1,7 +1,8 @@
 {
   "config": {
     "abort": {
-      "already_configured": "This device is already configured."
+      "already_configured": "This device is already configured.",
+      "reconfigure_successful": "Device reconfigured."
     },
     "error": {
       "cannot_connect": "Failed to connect to the gateway.",
@@ -18,7 +19,7 @@
       },
       "model": {
         "title": "Heater Model",
-        "description": "Select the heater model. All models other than the 300BKP are experimental: they are implemented from the manufacturer's manual only and have not been verified on hardware.",
+        "description": "Select the heater model and choose carefully: with the wrong model the modes are wrong and the Off button may not stop the heater (use the wall panel and correct the model if that happens). All models other than the 300BKP are experimental: they are implemented from the manufacturer's manual only and have not been verified on hardware.",
         "data": {
           "model": "Heater model"
         }
@@ -29,6 +30,16 @@
           "port": "Port"
         },
         "title": "Modbus Gateway"
+      },
+      "reconfigure": {
+        "title": "Reconfigure Device",
+        "description": "Change the gateway, device ID or heater model of this device. Changing the model changes which mode entities exist. With the wrong model the Off button may not stop the heater.",
+        "data": {
+          "host": "Gateway hostname or IP",
+          "port": "Port",
+          "slave_id": "Device ID (1–255)",
+          "model": "Heater model"
+        }
       }
     }
   },
@@ -171,11 +182,20 @@
     "communication_error": {
       "message": "Communication error: {error}"
     },
+    "invalid_value": {
+      "message": "Invalid value: {value}"
+    },
     "modbus_exception": {
       "message": "Modbus exception {code}"
     },
     "timeout": {
       "message": "Device response timeout"
+    },
+    "unknown_model": {
+      "message": "Unknown heater model \"{model}\". Reconfigure the device and choose a supported model."
+    },
+    "unsupported_function": {
+      "message": "The {model} heater does not support this function."
     },
     "write_failed": {
       "message": "Failed to write to device: Modbus exception {code}"

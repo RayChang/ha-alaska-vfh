@@ -265,3 +265,8 @@ def test_remaining_minutes() -> None:
     assert models.remaining_minutes(srp, 9, 900, 0) == 900
     assert models.remaining_minutes(srp, 7, 0, 0x0200) == 120
     assert models.remaining_minutes(srp, 10, 5, 0x0200) == 0
+
+
+def test_plan_mode_write_coerces_minutes_to_int() -> None:
+    profile = models.get_profile("300bkp")
+    assert models.plan_mode_write(profile, 1, 30.5) == ("fc16", [1, 0x001E])

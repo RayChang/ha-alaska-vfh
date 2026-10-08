@@ -82,3 +82,18 @@ def test_keys_used_by_profiles_exist(name: str) -> None:
         assert option in entity["sensor"]["heater_type"]["state"]
     assert "filter_reset" in entity["button"]
     assert "model" in data["config"]["step"]
+
+
+def test_selector_labels_start_with_profile_label() -> None:
+    options = _load("strings.json")["selector"]["model"]["options"]
+    for profile in models.PROFILES.values():
+        assert options[profile.key].startswith(profile.label)
+
+
+@pytest.mark.parametrize("name", _FILES)
+def test_new_flow_and_error_texts_exist(name: str) -> None:
+    data = _load(name)
+    assert "reconfigure" in data["config"]["step"]
+    assert "reconfigure_successful" in data["config"]["abort"]
+    for key in ("unsupported_function", "invalid_value", "unknown_model"):
+        assert key in data["exceptions"]

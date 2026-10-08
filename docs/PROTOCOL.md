@@ -38,7 +38,7 @@ Several heaters can share one RS-485 bus, each with its own device id.
 | 5 | R | Heater element type | 968 models: 1 = PTC, 2 = carbon. Not documented for the 300BKP; treated as opaque |
 | 6 | R | System status | 0 = OK, 1 = temperature sensor open, 2 = overheat / filter needs replacing |
 | 7 | R | Feedback status | 0 = OK, 1 = power relay fault, 2 = motor open |
-| 8 | R | Accumulated usage hours | Filter hours, 0–2000 |
+| 8 | R | Accumulated usage hours | Filter hours; range 0–2000 on the 300BKP and 300SRP, 0–1000 on the 300BRP, 968SRN/SRP and 968SKN/SKP |
 | 9 | R | 24 h ventilation remaining | Minutes, 0–1440; only meaningful in mode 7 |
 | 10 | R/W | Work mode | See the mode table |
 | 11 | R/W | Work time | High byte = hours (0–12), low byte = minutes (0–59) |
@@ -46,8 +46,8 @@ Several heaters can share one RS-485 bus, each with its own device id.
 
 The integration reads registers 6–11 in a single FC03 request on every poll, and
 registers 0–5 once while setting up (for the device id check and the firmware version).
-Models other than the 300BKP do not read the 0–5 block (registers 3/4 may not exist
-there): the config flow reads register 0 alone, and setup reads the firmware register
+Models other than the 300BKP do not read the 0–5 block (register 3 is not documented
+on the 300BRP and 300SRP, so the block read may fail there): the config flow reads register 0 alone, and setup reads the firmware register
 (and, on 968 models, register 5) alone. A Modbus exception on one of those reads is
 logged at debug level and leaves the value unknown; timeouts and connection errors
 still fail the setup.
@@ -158,6 +158,10 @@ place that chooses FC06 or FC16 and clamps the time).
 
 ### Other registers per model
 
+Filter hours (register 8) range: 0–2000 on the 300BKP and 300SRP, 0–1000 on the 300BRP,
+968SRN/SRP and 968SKN/SKP.
+
+
 | | Firmware register | Reset register (write `0xAA55`, FC06) | Register 5 | Polled block | Feedback (reg 7) |
 |---|---:|---:|---|---|---|
 | 300BKP | 4 | 12 | – | 6..11 | 0 ok, 1 relay fault, 2 motor open |
@@ -180,7 +184,9 @@ replacing. Exactly one bit set gives that state; any combination of more than on
 | 12 | R/W | Air zone: 1 off, 2 diffuse, 3 focus |
 | 13 | R/W | Air direction: 0 off (read only), 1 = 65°, 2 = 80°, 3 = 95°, 4 = 110°, 5 = 125°, 6 = auto swing 65–125° |
 
-The manual says registers 12 and 13 can only be set while a mode 1–6 is running. The
+The manual says registers 12 and 13 can only be set while a mode 1–6 is running (for
+register 12 the note reads "擴散或集中", see (h)). The filter message reset is only
+accepted while the system status is "overheat" or "filter needs replacing" (see (g)). The
 integration does not check this: it writes and shows the device's Modbus exception
 through the normal translated error. Register 12 is the reset register on the other
 models, which is why only the 300SRP polls it.
@@ -199,14 +205,26 @@ unverified, so please report any of these that turns out to be wrong.
   stop mode is `000A` and `000E` is the reset register, so it is interpreted as 0009
   (24 h ventilation) and 000A (stop).
 - **(c) 300SRP work-time limits.** The limits overlap on mode 3 and none are given for
-  modes 7–8. Modes 1–3 and 7–8 use 8 hours, the conservative value.
+  modes 7–8. Modes 1–3 and 7–8 use 8 hours, the conservative value. The 968SRN/SRP
+  page has the identical mode table and prints "0004~0008 → 12 h", which suggests the
+  300SRP's "0003~0006" is a typo for 0004–0008 (so the real limit for modes 7–8 may be
+  720 minutes); 480 is safe either way.
 - **(d) 300BKP work-time note.** It says "0001, 0008" although the model has modes
   1–6. It is interpreted as modes 1–6; this was verified on hardware.
 - **(e) 300BKP feedback range.** The page states the range of the feedback register as
   0–1 but lists three values (0, 1, 2). All three are decoded.
-- **(f) Registers 3/4 on the 300BRP and 300SRP.** Whether they answer is unknown, so
-  those models identify the device with single-register reads (register 0 for the id
-  check, register 5 for the firmware).
+- **(f) Register 3 on the 300BRP and 300SRP.** Register 3 is not documented there
+  (register 4 is reserved and readable; the 300SRP manual labels it NTC ADC), so the
+  0–5 block read may fail. Those models identify the device with single-register reads
+  (register 0 for the id check, register 5 for the firmware).
+- **(g) 300SRP filter message reset.** The manual restricts the write: it clears the
+  "clean filter" message only while the system is in the "overheat" or "filter needs
+  replacing" state. On a healthy heater the device is expected to answer with a Modbus
+  exception, which the integration shows as an error.
+- **(h) 300SRP air zone.** The range is 1–3, but the note says only "擴散或集中"
+  (diffuse or focus) can be set while modes 1–6 run. Writing `off` (1) may therefore be
+  refused, or may be the only value allowed when stopped. It is offered as an option
+  and the device's answer is shown.
 
 ## Expected timing (not measured)
 

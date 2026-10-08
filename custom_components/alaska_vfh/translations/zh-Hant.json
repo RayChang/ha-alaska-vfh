@@ -1,7 +1,8 @@
 {
   "config": {
     "abort": {
-      "already_configured": "此裝置已設定。"
+      "already_configured": "此裝置已設定。",
+      "reconfigure_successful": "裝置已重新設定。"
     },
     "error": {
       "cannot_connect": "無法連接到閘道。",
@@ -18,7 +19,7 @@
       },
       "model": {
         "title": "暖風機型號",
-        "description": "請選擇暖風機型號。除 300BKP 外，其他型號皆為實驗性：僅依原廠手冊實作，尚未在實機上驗證。",
+        "description": "請選擇暖風機型號，並務必選對：型號錯誤時模式會對應錯誤，「停止」按鈕可能無法停止暖風機（若發生此情況，請用牆上控制面板停止，並修正型號）。除 300BKP 外，其他型號皆為實驗性：僅依原廠手冊實作，尚未在實機上驗證。",
         "data": {
           "model": "暖風機型號"
         }
@@ -29,6 +30,16 @@
           "port": "連接埠"
         },
         "title": "Modbus閘道"
+      },
+      "reconfigure": {
+        "title": "重新設定裝置",
+        "description": "變更此裝置的閘道、裝置ID或暖風機型號。變更型號會改變可用的模式實體。型號錯誤時，「停止」按鈕可能無法停止暖風機。",
+        "data": {
+          "host": "閘道主機名或IP",
+          "port": "連接埠",
+          "slave_id": "裝置ID（1–255）",
+          "model": "暖風機型號"
+        }
       }
     }
   },
@@ -171,11 +182,20 @@
     "communication_error": {
       "message": "通訊錯誤：{error}"
     },
+    "invalid_value": {
+      "message": "無效的值：{value}"
+    },
     "modbus_exception": {
       "message": "Modbus 例外 {code}"
     },
     "timeout": {
       "message": "裝置回應逾時"
+    },
+    "unknown_model": {
+      "message": "未知的暖風機型號「{model}」。請重新設定裝置並選擇支援的型號。"
+    },
+    "unsupported_function": {
+      "message": "{model} 暖風機不支援此功能。"
     },
     "write_failed": {
       "message": "寫入裝置失敗：Modbus 例外 {code}"
