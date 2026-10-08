@@ -4,11 +4,21 @@ from __future__ import annotations
 
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
+from homeassistant.exceptions import (
+    ConfigEntryError,
+    ConfigEntryNotReady,
+    HomeAssistantError,
+)
 from homeassistant.helpers import device_registry as dr
 
-from .coordinator import AlaskaConfigEntry, AlaskaCoordinator
+from .const import CONF_MODEL, DOMAIN
+from .coordinator import (
+    AlaskaConfigEntry,
+    AlaskaCoordinator,
+    async_reidentify_devices,
+)
 from .hub import async_acquire_hub, async_release_hub
+from .models import DEFAULT_MODEL, PROFILES
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
@@ -19,8 +29,26 @@ PLATFORMS: list[Platform] = [
 ]
 
 
+async def async_migrate_entry(hass: HomeAssistant, entry: AlaskaConfigEntry) -> bool:
+    """Migrate older entries: 1.1 had no model and was always a 300BKP."""
+    if entry.version > 1:
+        return False
+    if entry.minor_version < 2:
+        hass.config_entries.async_update_entry(
+            entry, data={**entry.data, CONF_MODEL: DEFAULT_MODEL}, minor_version=2
+        )
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: AlaskaConfigEntry) -> bool:
     """Set up a heater from a config entry."""
+    if entry.data[CONF_MODEL] not in PROFILES:
+        # Never guess a model: a wrong profile can write the wrong mode
+        raise ConfigEntryError(
+            translation_domain=DOMAIN,
+            translation_key="unknown_model",
+            translation_placeholders={"model": str(entry.data[CONF_MODEL])},
+        )
     hub = async_acquire_hub(hass, entry.data[CONF_HOST], entry.data[CONF_PORT])
     coordinator = AlaskaCoordinator(hass, entry, hub)
     setup_ok = False
@@ -40,6 +68,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: AlaskaConfigEntry) -> bo
         entry.runtime_data = coordinator
 
         device_info = coordinator.device_info
+        # Reconfigure moves the device to the new unique id; this is only a fallback
+        async_reidentify_devices(hass, entry, entry.unique_id or entry.entry_id)
         dr.async_get(hass).async_get_or_create(
             config_entry_id=entry.entry_id,
             identifiers=device_info["identifiers"],

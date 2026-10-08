@@ -1,0 +1,71 @@
+name: Model verification report
+description: Report how an experimental heater model behaves on real hardware
+labels: [model-verification]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Models other than the 300BKP are implemented from the manufacturer's manual and
+        have not been verified on hardware. A report of what the heater actually did
+        helps to mark a model as verified. Please do not post passwords or other
+        secrets. The diagnostics download redacts the gateway host but includes the
+        port, device id and the name you gave the heater.
+  - type: dropdown
+    id: model
+    attributes:
+      label: Heater model
+      options:
+        - 300BRP
+        - 300SRP
+        - 968SRN / 968SRP
+        - 968SKN / 968SKP
+        - 300BKP
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware shown on the device page
+      description: Leave "unknown" if the device page shows no firmware version.
+      placeholder: "2.11"
+    validations:
+      required: true
+  - type: input
+    id: integration_version
+    attributes:
+      label: Integration version
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: textarea
+    id: modes
+    attributes:
+      label: Modes tried and what the heater actually did
+      description: |
+        For every mode you tried (buttons or the mode select) say whether the heater
+        started the mode you expected, whether the work time was applied, and whether
+        stop worked. A mode that starts something different from its name is the most
+        useful finding.
+      placeholder: |
+        heat_high: started high heat, 30 min, remaining time counted down
+        cool_fast: started a different mode (low heat)
+        off: stopped
+    validations:
+      required: true
+  - type: textarea
+    id: other
+    attributes:
+      label: Other entities and errors
+      description: |
+        Status sensors, filter hours, the model-specific entities (air zone, air
+        direction, filter message reset, heater type) and any error shown by Home
+        Assistant when you changed something.
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: |
+        Download the diagnostics file (Settings → Devices & services → Alaska Bath Heater →
+        the three-dot menu of the entry → Download diagnostics) and attach it here.
+    validations:
+      required: true

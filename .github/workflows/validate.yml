@@ -26,3 +26,53 @@ jobs:
         uses: hacs/action@main
         with:
           category: integration
+
+  tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Run tests
+        run: |
+          pip install pytest
+          pytest tests -q
+
+  tests-homeassistant:
+    # Each leg installs pytest-homeassistant-custom-component, which pins one Home
+    # Assistant release, plus the requirements of that release's modbus component
+    # (components/modbus/manifest.json), because the integration depends on modbus.
+    # 2026.4 is the minimum in hacs.json; 2026.9 is the version verified on hardware.
+    name: Home Assistant ${{ matrix.ha }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ha: "2026.4.4"
+            python: "3.14"
+            packages: >-
+              pytest-homeassistant-custom-component==0.13.325
+              pymodbus==3.11.2
+          - ha: "2026.9.4"
+            python: "3.14"
+            packages: >-
+              pytest-homeassistant-custom-component==0.13.367
+              pymodbus==3.13.1
+              modbus-connection[tmodbus]==4.10.0
+              tmodbus==0.6.2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Run Home Assistant level tests
+        run: |
+          pip install ${{ matrix.packages }}
+          python -c "import homeassistant.const as c; print(c.__version__)"
+          pytest tests -q -o asyncio_mode=auto

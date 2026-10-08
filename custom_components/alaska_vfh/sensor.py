@@ -15,9 +15,15 @@ from homeassistant.const import EntityCategory, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import FEEDBACK_STATUS, SYSTEM_STATUS
-from .coordinator import AlaskaConfigEntry, AlaskaCoordinator, HeaterState
+from .coordinator import AlaskaConfigEntry, AlaskaCoordinator
 from .entity import AlaskaEntity
+from .models import (
+    HEATER_TYPES,
+    ModelProfile,
+    decode_heater_type,
+    decode_system_status,
+    remaining_minutes,
+)
 
 PARALLEL_UPDATES = 0
 
@@ -26,51 +32,70 @@ PARALLEL_UPDATES = 0
 class AlaskaSensorDescription(SensorEntityDescription):
     """Sensor description with a value extractor."""
 
-    value_fn: Callable[[HeaterState], int | str | None]
+    value_fn: Callable[[AlaskaCoordinator], int | str | None]
 
 
-SENSORS: tuple[AlaskaSensorDescription, ...] = (
-    AlaskaSensorDescription(
-        key="remaining_time",
-        translation_key="remaining_time",
-        device_class=SensorDeviceClass.DURATION,
-        native_unit_of_measurement=UnitOfTime.MINUTES,
-        state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data.remaining_minutes,
-    ),
-    AlaskaSensorDescription(
-        key="usage_hours",
-        translation_key="usage_hours",
-        device_class=SensorDeviceClass.DURATION,
-        native_unit_of_measurement=UnitOfTime.HOURS,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        value_fn=lambda data: data.usage_hours,
-    ),
-    AlaskaSensorDescription(
-        key="vent_24h_remaining",
-        translation_key="vent_24h_remaining",
-        device_class=SensorDeviceClass.DURATION,
-        native_unit_of_measurement=UnitOfTime.MINUTES,
-        state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data.vent24_remaining,
-    ),
-    AlaskaSensorDescription(
-        key="system_status",
-        translation_key="system_status",
-        device_class=SensorDeviceClass.ENUM,
-        options=list(SYSTEM_STATUS.values()),
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: SYSTEM_STATUS.get(data.system_status),
-    ),
-    AlaskaSensorDescription(
-        key="feedback_status",
-        translation_key="feedback_status",
-        device_class=SensorDeviceClass.ENUM,
-        options=list(FEEDBACK_STATUS.values()),
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: FEEDBACK_STATUS.get(data.feedback_status),
-    ),
-)
+def _sensor_descriptions(profile: ModelProfile) -> list[AlaskaSensorDescription]:
+    """Build the sensor descriptions for a model."""
+    descriptions = [
+        AlaskaSensorDescription(
+            key="remaining_time",
+            translation_key="remaining_time",
+            device_class=SensorDeviceClass.DURATION,
+            native_unit_of_measurement=UnitOfTime.MINUTES,
+            state_class=SensorStateClass.MEASUREMENT,
+            value_fn=lambda c: remaining_minutes(
+                c.profile,
+                c.data.mode,
+                c.data.vent24_remaining,
+                c.data.work_time_raw,
+            ),
+        ),
+        AlaskaSensorDescription(
+            key="usage_hours",
+            translation_key="usage_hours",
+            device_class=SensorDeviceClass.DURATION,
+            native_unit_of_measurement=UnitOfTime.HOURS,
+            state_class=SensorStateClass.TOTAL_INCREASING,
+            value_fn=lambda c: c.data.usage_hours,
+        ),
+        AlaskaSensorDescription(
+            key="vent_24h_remaining",
+            translation_key="vent_24h_remaining",
+            device_class=SensorDeviceClass.DURATION,
+            native_unit_of_measurement=UnitOfTime.MINUTES,
+            state_class=SensorStateClass.MEASUREMENT,
+            value_fn=lambda c: c.data.vent24_remaining,
+        ),
+        AlaskaSensorDescription(
+            key="system_status",
+            translation_key="system_status",
+            device_class=SensorDeviceClass.ENUM,
+            options=list(profile.system_status_options),
+            entity_category=EntityCategory.DIAGNOSTIC,
+            value_fn=lambda c: decode_system_status(c.profile, c.data.system_status),
+        ),
+        AlaskaSensorDescription(
+            key="feedback_status",
+            translation_key="feedback_status",
+            device_class=SensorDeviceClass.ENUM,
+            options=list(profile.feedback_status.values()),
+            entity_category=EntityCategory.DIAGNOSTIC,
+            value_fn=lambda c: c.profile.feedback_status.get(c.data.feedback_status),
+        ),
+    ]
+    if profile.has_heater_type:
+        descriptions.append(
+            AlaskaSensorDescription(
+                key="heater_type",
+                translation_key="heater_type",
+                device_class=SensorDeviceClass.ENUM,
+                options=list(HEATER_TYPES.values()),
+                entity_category=EntityCategory.DIAGNOSTIC,
+                value_fn=lambda c: decode_heater_type(c.heater_type),
+            )
+        )
+    return descriptions
 
 
 async def async_setup_entry(
@@ -80,7 +105,10 @@ async def async_setup_entry(
 ) -> None:
     """Set up the sensors."""
     coordinator = entry.runtime_data
-    async_add_entities(AlaskaSensor(coordinator, desc) for desc in SENSORS)
+    async_add_entities(
+        AlaskaSensor(coordinator, desc)
+        for desc in _sensor_descriptions(coordinator.profile)
+    )
 
 
 class AlaskaSensor(AlaskaEntity, SensorEntity):
@@ -97,4 +125,4 @@ class AlaskaSensor(AlaskaEntity, SensorEntity):
     @property
     def native_value(self) -> int | str | None:
         """Return the decoded value."""
-        return self.entity_description.value_fn(self.coordinator.data)
+        return self.entity_description.value_fn(self.coordinator)

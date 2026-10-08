@@ -1,7 +1,8 @@
 {
   "config": {
     "abort": {
-      "already_configured": "This device is already configured."
+      "already_configured": "This device is already configured.",
+      "reconfigure_successful": "Device reconfigured."
     },
     "error": {
       "cannot_connect": "Failed to connect to the gateway.",
@@ -16,12 +17,29 @@
         },
         "title": "Device Information"
       },
+      "model": {
+        "title": "Heater Model",
+        "description": "Select the heater model and choose carefully: with the wrong model the modes are wrong and the Off button may not stop the heater (use the wall panel and correct the model if that happens). All models other than the 300BKP are experimental: they are implemented from the manufacturer's manual only and have not been verified on hardware.",
+        "data": {
+          "model": "Heater model"
+        }
+      },
       "user": {
         "data": {
           "host": "Gateway hostname or IP",
           "port": "Port"
         },
         "title": "Modbus Gateway"
+      },
+      "reconfigure": {
+        "title": "Reconfigure Device",
+        "description": "Change the gateway, device ID or heater model of this device. Changing the model recreates the mode buttons and removes entities the new model does not have; the mode buttons get new entity IDs that match their new names, so check your automations and scripts. The device, its area and its name are kept. With the wrong model the Off button may not stop the heater.",
+        "data": {
+          "host": "Gateway hostname or IP",
+          "port": "Port",
+          "slave_id": "Device ID (1–255)",
+          "model": "Heater model"
+        }
       }
     }
   },
@@ -32,32 +50,50 @@
       }
     },
     "button": {
-      "mode_1": {
+      "mode_heat_high": {
         "name": "Mode: High heat"
       },
-      "mode_2": {
+      "mode_heat_dry": {
         "name": "Mode: Heat & dry"
       },
-      "mode_3": {
+      "mode_cool_fast": {
         "name": "Mode: Fast cool air"
       },
-      "mode_4": {
+      "mode_dry_eco": {
         "name": "Mode: Eco dry"
       },
-      "mode_5": {
+      "mode_vent_high": {
         "name": "Mode: Ventilation (high)"
       },
-      "mode_6": {
+      "mode_vent_low": {
         "name": "Mode: Ventilation (low)"
       },
-      "mode_7": {
+      "mode_vent_24h": {
         "name": "Mode: 24h ventilation"
       },
-      "mode_12": {
+      "mode_off": {
         "name": "Mode: Off"
+      },
+      "mode_heat": {
+        "name": "Mode: Heat"
+      },
+      "mode_heat_medium": {
+        "name": "Mode: Medium heat"
+      },
+      "mode_heat_low": {
+        "name": "Mode: Low heat"
+      },
+      "mode_cool": {
+        "name": "Mode: Cool air"
+      },
+      "mode_cool_slow": {
+        "name": "Mode: Slow cool air"
       },
       "reset": {
         "name": "Reset"
+      },
+      "filter_reset": {
+        "name": "Clear filter message"
       }
     },
     "number": {
@@ -69,14 +105,38 @@
       "mode": {
         "name": "Mode",
         "state": {
+          "cool": "Cool air",
           "cool_fast": "Fast cool air",
+          "cool_slow": "Slow cool air",
           "dry_eco": "Eco dry",
+          "heat": "Heat",
           "heat_dry": "Heat & dry",
           "heat_high": "High heat",
+          "heat_low": "Low heat",
+          "heat_medium": "Medium heat",
           "off": "Off",
           "vent_24h": "24h ventilation",
           "vent_high": "Ventilation (high)",
           "vent_low": "Ventilation (low)"
+        }
+      },
+      "air_zone": {
+        "name": "Air zone",
+        "state": {
+          "off": "Off",
+          "diffuse": "Diffuse",
+          "focus": "Focus"
+        }
+      },
+      "air_direction": {
+        "name": "Air direction",
+        "state": {
+          "deg_65": "65°",
+          "deg_80": "80°",
+          "deg_95": "95°",
+          "deg_110": "110°",
+          "deg_125": "125°",
+          "swing": "Auto swing (65–125°)"
         }
       }
     },
@@ -89,14 +149,24 @@
           "relay_fault": "Power relay fault"
         }
       },
+      "heater_type": {
+        "name": "Heater element type",
+        "state": {
+          "ptc": "PTC",
+          "carbon": "Carbon"
+        }
+      },
       "remaining_time": {
         "name": "Remaining time"
       },
       "system_status": {
         "name": "System status",
         "state": {
+          "filter_replace": "Filter needs replacing",
+          "multiple_faults": "Multiple faults",
           "ok": "OK",
           "overheat": "Overheat / filter needs replacing",
+          "overheat_only": "Overheat",
           "temp_sensor_open": "Temperature sensor open"
         }
       },
@@ -112,11 +182,20 @@
     "communication_error": {
       "message": "Communication error: {error}"
     },
+    "invalid_value": {
+      "message": "Invalid value: {value}"
+    },
     "modbus_exception": {
       "message": "Modbus exception {code}"
     },
     "timeout": {
       "message": "Device response timeout"
+    },
+    "unknown_model": {
+      "message": "Unknown heater model \"{model}\". Reconfigure the device and choose a supported model."
+    },
+    "unsupported_function": {
+      "message": "The {model} heater does not support this function."
     },
     "write_failed": {
       "message": "Failed to write to device: Modbus exception {code}"
@@ -129,6 +208,17 @@
           "scan_interval": "Polling interval (seconds)"
         },
         "title": "Options"
+      }
+    }
+  },
+  "selector": {
+    "model": {
+      "options": {
+        "300bkp": "300BKP",
+        "300brp": "300BRP (experimental)",
+        "300srp": "300SRP (experimental)",
+        "968sr": "968SRN / 968SRP (experimental)",
+        "968sk": "968SKN / 968SKP (experimental)"
       }
     }
   }

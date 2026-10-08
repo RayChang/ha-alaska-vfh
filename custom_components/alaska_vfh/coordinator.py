@@ -10,47 +10,48 @@ from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
+    CONF_MODEL,
     CONF_SCAN_INTERVAL,
     CONF_SLAVE_ID,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_WORK_TIME,
     DOMAIN,
-    INFO_COUNT,
     MANUFACTURER,
-    MIN_WORK_MINUTES,
-    MODE_MAX_MINUTES,
-    MODE_OFF,
-    MODE_VENT_24H,
-    MODEL,
-    MODES,
-    MODES_FC06,
-    POLL_COUNT,
     POLL_START,
-    REG_FIRMWARE_VERSION,
     REG_MODE,
-    REG_RESET,
+    REG_USAGE_HOURS,
     RESET_MAGIC,
-    VENT24_MINUTES,
 )
 from .hub import AlaskaHub, AlaskaHubError
+from .models import (
+    AIR_DIRECTIONS,
+    AIR_ZONES,
+    INFO_BLOCK_COUNT,
+    MIN_WORK_MINUTES,
+    REG_AIR_DIRECTION,
+    REG_AIR_ZONE,
+    REG_HEATER_TYPE,
+    VENT24_MINUTES,
+    get_profile,
+    plan_mode_write,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 type AlaskaConfigEntry = ConfigEntry[AlaskaCoordinator]
 
-MAX_WORK_MINUTES = max(MODE_MAX_MINUTES.values())
-
 
 @dataclass(frozen=True, slots=True)
 class HeaterState:
-    """Decoded snapshot of registers 6..11."""
+    """Decoded snapshot of registers 6..11 (6..13 for models with air controls)."""
 
     system_status: int
     feedback_status: int
@@ -58,29 +59,17 @@ class HeaterState:
     vent24_remaining: int
     mode: int
     work_time_raw: int
-
-    @property
-    def remaining_minutes(self) -> int:
-        """Minutes left in the running mode.
-
-        Mode 7 counts down in register 9; timed modes 1-6 use register 11
-        (hi byte hours, lo byte minutes); any other mode (off) has none.
-        """
-        if self.mode == MODE_VENT_24H:
-            return self.vent24_remaining
-        if self.mode in MODE_MAX_MINUTES:
-            return (self.work_time_raw >> 8) * 60 + (self.work_time_raw & 0xFF)
-        return 0
-
-
-def encode_work_time(minutes: int) -> int:
-    """Encode minutes as register 11 value: hours * 256 + minutes."""
-    return (minutes // 60) * 256 + minutes % 60
+    air_zone: int | None = None
+    air_direction: int | None = None
 
 
 def format_firmware(register: int) -> str:
-    """Format register 4 (hi byte major, lo byte minor), e.g. 0x020B -> 2.11."""
+    """Format the firmware register (hi byte major, lo byte minor): 0x020B -> 2.11."""
     return f"{register >> 8}.{register & 0xFF}"
+
+
+# Gateway path unavailable / target failed to respond: a timeout in disguise
+_GATEWAY_EXCEPTION_CODES = frozenset({0x0A, 0x0B})
 
 
 def _translated_error(err: AlaskaHubError, *, write: bool) -> HomeAssistantError:
@@ -97,6 +86,32 @@ def _translated_error(err: AlaskaHubError, *, write: bool) -> HomeAssistantError
         translation_key=key,
         translation_placeholders=placeholders,
     )
+
+
+@callback
+def async_reidentify_devices(
+    hass: HomeAssistant, entry: ConfigEntry, unique_id: str
+) -> None:
+    """Point the entry's existing device at a new unique id (keeps area and name).
+
+    A device that cannot be moved because another device already carries the
+    target identifier is skipped with a warning instead of raising.
+    """
+    registry = dr.async_get(hass)
+    target = {(DOMAIN, unique_id)}
+    for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+        if device.identifiers == target:
+            continue
+        clash = registry.async_get_device(identifiers=target)
+        if clash is not None and clash.id != device.id:
+            _LOGGER.warning(
+                "Cannot re-identify device %s of %s: %s is used by another device",
+                device.id,
+                entry.title,
+                unique_id,
+            )
+            continue
+        registry.async_update_device(device.id, new_identifiers=target)
 
 
 class AlaskaCoordinator(DataUpdateCoordinator[HeaterState]):
@@ -121,9 +136,11 @@ class AlaskaCoordinator(DataUpdateCoordinator[HeaterState]):
             ),
         )
         self.hub = hub
+        self.profile = get_profile(entry.data[CONF_MODEL])
         self.slave_id: int = entry.data[CONF_SLAVE_ID]
         self.work_time: int = DEFAULT_WORK_TIME
         self.firmware: str | None = None
+        self.heater_type: int | None = None
         self.raw_registers: dict[int, int] = {}
         self._write_lock = asyncio.Lock()
 
@@ -135,24 +152,57 @@ class AlaskaCoordinator(DataUpdateCoordinator[HeaterState]):
             identifiers={(DOMAIN, entry.unique_id or entry.entry_id)},
             name=entry.title,
             manufacturer=MANUFACTURER,
-            model=MODEL,
+            model=self.profile.device_model,
             sw_version=self.firmware,
         )
 
     async def async_read_device_info(self) -> None:
-        """Read the identification registers 0..5 once (firmware version)."""
+        """Read the firmware version (and heater type) once during setup.
+
+        The verified 300BKP reads the identification block 0..5 in one request.
+        Other models read single registers, because register 3 is not
+        documented on them; a device Modbus exception on such a read only leaves
+        the value unknown (gateway exceptions 0x0A / 0x0B are timeouts and fail
+        the setup).
+        """
+        profile = self.profile
+        if profile.info_block_read:
+            try:
+                registers = await self.hub.async_read_holding_registers(
+                    0, INFO_BLOCK_COUNT, self.slave_id
+                )
+            except AlaskaHubError as err:
+                raise _translated_error(err, write=False) from err
+            firmware: int | None = registers[profile.reg_firmware]
+        else:
+            firmware = await self._async_read_optional(profile.reg_firmware)
+        if firmware is not None:
+            self.firmware = format_firmware(firmware)
+        if profile.has_heater_type:
+            self.heater_type = await self._async_read_optional(REG_HEATER_TYPE)
+
+    async def _async_read_optional(self, register: int) -> int | None:
+        """Read one register; a device exception gives None, other errors raise."""
         try:
-            registers = await self.hub.async_read_holding_registers(
-                0, INFO_COUNT, self.slave_id
-            )
+            return (
+                await self.hub.async_read_holding_registers(register, 1, self.slave_id)
+            )[0]
         except AlaskaHubError as err:
-            raise _translated_error(err, write=False) from err
-        self.firmware = format_firmware(registers[REG_FIRMWARE_VERSION])
+            if err.kind != "modbus" or err.code in _GATEWAY_EXCEPTION_CODES:
+                raise _translated_error(err, write=False) from err
+            _LOGGER.debug(
+                "Register %s of %s (slave %s) not readable: %s",
+                register,
+                self.config_entry.title,
+                self.slave_id,
+                err,
+            )
+            return None
 
     async def _async_read_state(self) -> HeaterState:
-        """Read registers 6..11 in a single request and decode them."""
+        """Read the polled register block in a single request and decode it."""
         registers = await self.hub.async_read_holding_registers(
-            POLL_START, POLL_COUNT, self.slave_id
+            POLL_START, self.profile.poll_count, self.slave_id
         )
         self.raw_registers = {
             POLL_START + i: value for i, value in enumerate(registers)
@@ -177,36 +227,26 @@ class AlaskaCoordinator(DataUpdateCoordinator[HeaterState]):
             await self._async_set_mode(mode, minutes)
 
     async def _async_set_mode(self, mode: int, minutes: int | None) -> None:
-        """Write a work mode.
-
-        This is the single place where the write function code is chosen:
-        modes 7 and 12 use FC06 (write_register); modes 1-6 use FC16
-        (write_registers) with [mode, work_time], work_time clamped to
-        [1, MODE_MAX_MINUTES[mode]] and encoded as hours * 256 + minutes.
-        """
-        if mode not in MODES:
-            raise ValueError(f"Unsupported mode {mode}")
-        work_time_raw: int | None = None
-        if mode in MODES_FC06:
+        """Write a work mode; models.plan_mode_write decides FC06 or FC16."""
+        wanted = self.work_time if minutes is None else minutes
+        plan = plan_mode_write(self.profile, mode, wanted)
+        work_time_raw = 0
+        if plan[0] == "fc06":
             await self._async_write(
-                self.hub.async_write_register(REG_MODE, mode, self.slave_id), mode
+                self.hub.async_write_register(REG_MODE, plan[1], self.slave_id), mode
             )
         else:
-            wanted = self.work_time if minutes is None else minutes
-            clamped = max(MIN_WORK_MINUTES, min(wanted, MODE_MAX_MINUTES[mode]))
-            work_time_raw = encode_work_time(clamped)
+            work_time_raw = plan[1][1]
             await self._async_write(
-                self.hub.async_write_registers(
-                    REG_MODE, [mode, work_time_raw], self.slave_id
-                ),
+                self.hub.async_write_registers(REG_MODE, plan[1], self.slave_id),
                 mode,
             )
         if self.data is not None:
             # Show the new mode and its time fields immediately, not after the poll
-            if mode == MODE_VENT_24H:
+            if mode == self.profile.mode_vent_24h:
                 vent24, raw = VENT24_MINUTES, self.data.work_time_raw
             else:
-                vent24, raw = 0, work_time_raw or 0
+                vent24, raw = 0, work_time_raw
             self.async_set_updated_data(
                 replace(
                     self.data, mode=mode, vent24_remaining=vent24, work_time_raw=raw
@@ -215,8 +255,8 @@ class AlaskaCoordinator(DataUpdateCoordinator[HeaterState]):
         await self.async_request_refresh()
 
     async def async_stop(self) -> None:
-        """Stop the heater (mode 12)."""
-        await self.async_set_mode(MODE_OFF)
+        """Stop the heater."""
+        await self.async_set_mode(self.profile.mode_off)
 
     async def async_set_work_time(self, minutes: int) -> None:
         """Store the work time; push it only if the device is running a timed mode.
@@ -224,25 +264,69 @@ class AlaskaCoordinator(DataUpdateCoordinator[HeaterState]):
         The decision uses a fresh read of the device, never the last polled
         state, so a stopped heater is not restarted by a stale mode value.
         """
-        wanted = max(MIN_WORK_MINUTES, min(minutes, MAX_WORK_MINUTES))
+        wanted = max(MIN_WORK_MINUTES, min(minutes, self.profile.max_work_minutes))
         async with self._write_lock:
             try:
                 state = await self._async_read_state()
             except AlaskaHubError as err:
                 raise _translated_error(err, write=False) from err
             self.async_set_updated_data(state)
-            if state.mode in MODE_MAX_MINUTES:
+            if state.mode in self.profile.mode_max_minutes:
                 await self._async_set_mode(state.mode, wanted)
             self.work_time = wanted
         self.async_update_listeners()
 
     async def async_reset(self) -> None:
         """Reset the power board (only accepted by the device while stopped)."""
-        await self._async_write(
-            self.hub.async_write_register(REG_RESET, RESET_MAGIC, self.slave_id),
-            None,
-        )
+        await self._async_write_single(self.profile.reg_reset, RESET_MAGIC)
         await self.async_request_refresh()
+
+    async def async_reset_filter(self) -> None:
+        """Clear the "clean filter" message (300SRP)."""
+        self._require(self.profile.has_filter_reset)
+        await self._async_write_single(REG_USAGE_HOURS, RESET_MAGIC)
+        await self.async_request_refresh()
+
+    async def async_set_air_zone(self, value: int) -> None:
+        """Set the air zone (300SRP; the device only accepts it while running)."""
+        self._require(self.profile.has_air_controls)
+        self._require(value in AIR_ZONES, value)
+        await self._async_write_single(REG_AIR_ZONE, value)
+        if self.data is not None:
+            self.async_set_updated_data(replace(self.data, air_zone=value))
+        await self.async_request_refresh()
+
+    async def async_set_air_direction(self, value: int) -> None:
+        """Set the air direction (300SRP; the device only accepts it while running)."""
+        self._require(self.profile.has_air_controls)
+        self._require(value in AIR_DIRECTIONS, value)
+        await self._async_write_single(REG_AIR_DIRECTION, value)
+        if self.data is not None:
+            self.async_set_updated_data(replace(self.data, air_direction=value))
+        await self.async_request_refresh()
+
+    def _require(self, allowed: bool, value: int | None = None) -> None:
+        """Refuse a write the model does not support or a value out of range."""
+        if allowed:
+            return
+        if value is None:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="unsupported_function",
+                translation_placeholders={"model": self.profile.label},
+            )
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="invalid_value",
+            translation_placeholders={"value": str(value)},
+        )
+
+    async def _async_write_single(self, register: int, value: int) -> None:
+        """Write one register with FC06 under the write lock."""
+        async with self._write_lock:
+            await self._async_write(
+                self.hub.async_write_register(register, value, self.slave_id), None
+            )
 
     async def _async_write(
         self, write: Coroutine[Any, Any, None], mode: int | None
