@@ -33,7 +33,7 @@
       },
       "reconfigure": {
         "title": "Reconfigure Device",
-        "description": "Change the gateway, device ID or heater model of this device. Changing the model recreates the mode buttons and removes entities the new model does not have; the entity IDs of the mode buttons may change, so check your automations and scripts. The device, its area and its name are kept. With the wrong model the Off button may not stop the heater.",
+        "description": "Change the gateway, device ID or heater model of this device. Changing the model recreates the mode buttons and removes entities the new model does not have; the mode buttons get new entity IDs that match their new names, so check your automations and scripts. The device, its area and its name are kept. With the wrong model the Off button may not stop the heater.",
         "data": {
           "host": "Gateway hostname or IP",
           "port": "Port",

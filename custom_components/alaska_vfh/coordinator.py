@@ -10,8 +10,9 @@ from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -85,6 +86,32 @@ def _translated_error(err: AlaskaHubError, *, write: bool) -> HomeAssistantError
         translation_key=key,
         translation_placeholders=placeholders,
     )
+
+
+@callback
+def async_reidentify_devices(
+    hass: HomeAssistant, entry: ConfigEntry, unique_id: str
+) -> None:
+    """Point the entry's existing device at a new unique id (keeps area and name).
+
+    A device that cannot be moved because another device already carries the
+    target identifier is skipped with a warning instead of raising.
+    """
+    registry = dr.async_get(hass)
+    target = {(DOMAIN, unique_id)}
+    for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+        if device.identifiers == target:
+            continue
+        clash = registry.async_get_device(identifiers=target)
+        if clash is not None and clash.id != device.id:
+            _LOGGER.warning(
+                "Cannot re-identify device %s of %s: %s is used by another device",
+                device.id,
+                entry.title,
+                unique_id,
+            )
+            continue
+        registry.async_update_device(device.id, new_identifiers=target)
 
 
 class AlaskaCoordinator(DataUpdateCoordinator[HeaterState]):

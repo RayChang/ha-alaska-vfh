@@ -14,6 +14,7 @@ import pytest
 
 pytest.importorskip("pytest_homeassistant_custom_component")
 
+import voluptuous as vol  # noqa: E402
 from homeassistant.config_entries import ConfigEntryState  # noqa: E402
 from homeassistant.data_entry_flow import FlowResultType, InvalidData  # noqa: E402
 from homeassistant.exceptions import HomeAssistantError  # noqa: E402
@@ -329,7 +330,7 @@ async def _reconfigure(hass, entry, **changes) -> dict:
     result = await entry.start_reconfigure_flow(hass)
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "reconfigure"
-    data = {**BASE, "model": entry.data["model"], **changes}
+    data = {**entry.data, **changes}
     return await hass.config_entries.flow.async_configure(result["flow_id"], data)
 
 
@@ -375,6 +376,36 @@ async def test_reconfigure_host_keeps_the_device(hass) -> None:
         await hass.config_entries.async_unload(entry.entry_id)
 
 
+def _registry_snapshot(hass, entry) -> dict[str, tuple[str, str]]:
+    return {
+        e.entity_id: (e.id, e.unique_id)
+        for e in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
+    }
+
+
+def _id_to_suffix(hass, entry, domain: str = "button") -> dict[str, str]:
+    prefix = f"{entry.entry_id}_"
+    return {
+        e.entity_id: e.unique_id.removeprefix(prefix)
+        for e in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
+        if e.domain == domain
+    }
+
+
+# Button entity ids of a fresh 300BKP entry titled "Bath" (v0.1.0 names)
+BKP_BUTTONS = {
+    "button.bath_mode_high_heat": "mode_1",
+    "button.bath_mode_heat_dry": "mode_2",
+    "button.bath_mode_fast_cool_air": "mode_3",
+    "button.bath_mode_eco_dry": "mode_4",
+    "button.bath_mode_ventilation_high": "mode_5",
+    "button.bath_mode_ventilation_low": "mode_6",
+    "button.bath_mode_24h_ventilation": "mode_7",
+    "button.bath_mode_off": "mode_12",
+    "button.bath_reset": "reset",
+}
+
+
 def _states_unavailable(hass, entry) -> list[str]:
     return [
         e.entity_id
@@ -405,6 +436,10 @@ async def test_reconfigure_model_300srp_to_300bkp(hass) -> None:
             registry.async_get_entity_id("button", DOMAIN, f"{entry.entry_id}_mode_12")
             == "button.bath_mode_off"
         )
+        # every mode button id is generated from its new name, no stale ids
+        buttons = _id_to_suffix(hass, entry)
+        assert buttons == BKP_BUTTONS
+        assert not [i for i in _id_to_suffix(hass, entry, "button") if i.endswith("_2")]
         # 300SRP value 10 is no longer a button
         assert (
             registry.async_get_entity_id("button", DOMAIN, f"{entry.entry_id}_mode_10")
@@ -533,4 +568,124 @@ async def test_reconfigure_validation_failure_keeps_entry(
         assert result["errors"] == {error_key: error}
         assert dict(entry.data) == data_before
         assert entry.unique_id == "gateway:4196:3"
+        await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_reconfigure_300bkp_to_300srp_ids_and_round_trip(hass) -> None:
+    hub = _fake_hub()
+    with _patched(hub):
+        entry = await _setup(hass, "300bkp", hub, title="Bath")
+        assert _id_to_suffix(hass, entry) == BKP_BUTTONS
+        await _reconfigure(hass, entry, model="300srp")
+        await hass.async_block_till_done()
+        buttons = _id_to_suffix(hass, entry)
+        assert buttons["button.bath_mode_heat_dry"] == "mode_3"
+        assert buttons["button.bath_mode_fast_cool_air"] == "mode_5"
+        assert buttons["button.bath_mode_24h_ventilation"] == "mode_9"
+        assert buttons["button.bath_mode_ventilation_low"] == "mode_8"
+        assert buttons["button.bath_mode_off"] == "mode_10"
+        assert not [i for i in buttons if i.endswith("_2")]
+        assert _states_unavailable(hass, entry) == []
+        # and back: the retired records must not be restored
+        await _reconfigure(hass, entry, model="300bkp")
+        await hass.async_block_till_done()
+        assert _id_to_suffix(hass, entry) == BKP_BUTTONS
+        assert _suffixes(hass, entry) == V010_SUFFIXES
+        assert _states_unavailable(hass, entry) == []
+        await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_reconfigure_failure_and_abort_leave_registry_untouched(hass) -> None:
+    hub = _fake_hub()
+    with _patched(hub):
+        entry = await _setup(hass, "300bkp", hub, title="Bath")
+        before = _registry_snapshot(hass, entry)
+        hub.async_read_holding_registers = AsyncMock(
+            side_effect=AlaskaHubError("timeout", "no answer")
+        )
+        result = await _reconfigure(hass, entry, model="300srp")
+        assert result["type"] == FlowResultType.FORM
+        assert _registry_snapshot(hass, entry) == before
+        # a flow that is started and abandoned changes nothing either
+        result = await entry.start_reconfigure_flow(hass)
+        hass.config_entries.flow.async_abort(result["flow_id"])
+        assert _registry_snapshot(hass, entry) == before
+        assert entry.data["model"] == "300bkp"
+        await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_reconfigure_sequence_never_collides_on_identifiers(hass) -> None:
+    hub = _fake_hub()
+    original = hub.async_read_holding_registers.side_effect
+
+    async def read(address: int, count: int, slave: int) -> list[int]:
+        if slave == 5 and address == 6:
+            raise AlaskaHubError("timeout", "device offline")
+        if address == 0 and count == 6:
+            return [slave, 1, 0, 0, 0x020B, 1]
+        return await original(address, count, slave)
+
+    hub.async_read_holding_registers = AsyncMock(side_effect=read)
+    with _patched(hub):
+        entries = []
+        for slave in (3, 4):
+            entry = MockConfigEntry(
+                domain=DOMAIN,
+                version=1,
+                minor_version=2,
+                unique_id=f"gateway:4196:{slave}",
+                data={**BASE, "slave_id": slave, "model": "300bkp"},
+            )
+            entry.add_to_hass(hass)
+            entries.append(entry)
+        assert await hass.config_entries.async_setup(entries[0].entry_id)
+        await hass.async_block_till_done()
+        entry_a, entry_b = entries
+        # B moves to id 5, but its device does not answer there: setup is retried
+        result = await _reconfigure(hass, entry_b, slave_id=5)
+        await hass.async_block_till_done()
+        assert result["reason"] == "reconfigure_successful"
+        assert entry_b.state is ConfigEntryState.SETUP_RETRY
+        # A takes over the id B just left
+        result = await _reconfigure(hass, entry_a, slave_id=4)
+        await hass.async_block_till_done()
+        assert result["reason"] == "reconfigure_successful"
+        assert entry_a.state is ConfigEntryState.LOADED
+        device_registry = dr.async_get(hass)
+        (device_a,) = dr.async_entries_for_config_entry(
+            device_registry, entry_a.entry_id
+        )
+        (device_b,) = dr.async_entries_for_config_entry(
+            device_registry, entry_b.entry_id
+        )
+        assert device_a.identifiers == {(DOMAIN, "gateway:4196:4")}
+        assert device_b.identifiers == {(DOMAIN, "gateway:4196:5")}
+        await hass.config_entries.async_unload(entry_a.entry_id)
+
+
+async def test_unknown_model_can_be_reconfigured(hass) -> None:
+    hub = _fake_hub()
+    with _patched(hub):
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            version=1,
+            minor_version=2,
+            unique_id="gateway:4196:3",
+            title="Alaska 300BKP",
+            data={**BASE, "model": "999zz"},
+        )
+        entry.add_to_hass(hass)
+        assert not await hass.config_entries.async_setup(entry.entry_id)
+        assert entry.state is ConfigEntryState.SETUP_ERROR
+        result = await entry.start_reconfigure_flow(hass)
+        assert result["step_id"] == "reconfigure"
+        model_key = next(k for k in result["data_schema"].schema if k == "model")
+        assert model_key.default is vol.UNDEFINED  # nothing preselected
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {**BASE, "model": "300bkp"}
+        )
+        await hass.async_block_till_done()
+        assert result["reason"] == "reconfigure_successful"
+        assert entry.state is ConfigEntryState.LOADED
+        assert entry.data["model"] == "300bkp"
         await hass.config_entries.async_unload(entry.entry_id)

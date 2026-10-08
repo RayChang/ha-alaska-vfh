@@ -118,8 +118,10 @@ Copy the `custom_components/alaska_vfh` folder of this repository into the
    initial setup. The device (with its area and name) and the entities common to all
    models keep their ids. **Changing the model recreates the mode buttons** (a mode
    number means a different mode on another model) and removes entities the new
-   model does not have, so the entity ids of the mode buttons may change: check
-   automations and scripts that use them.
+   model does not have; the mode buttons get new entity ids that match their new
+   names, so check automations and scripts that use them. Entities that are kept keep
+   their ids; use *Recreate entity IDs* on the device page if you want them all to
+   follow a new device name.
 7. Optional: **Configure** on the integration entry sets the polling interval
    (5–60 s, default 10 s).
 
@@ -216,7 +218,7 @@ Entity names are translated (English and Traditional Chinese).
   不同模式），請務必選對機型，詳見 [docs/PROTOCOL.md](docs/PROTOCOL.md)。
 - 300SRP 另有風域、風向選擇與「清除濾網提示」按鈕；968 系列另有發熱體類型感測器。
 - 型號選錯時，模式會對應錯誤，「停止」按鈕可能無法停止暖風機（請用牆上面板停止）。可在整合項目的選單
-  選「重新設定」修改閘道、裝置編號與型號（裝置與共用實體的 ID 保留；改變型號會重建模式按鈕，其實體 ID 可能改變，請檢查自動化）。
+  選「重新設定」修改閘道、裝置編號與型號（裝置與共用實體的 ID 保留；改變型號會重建模式按鈕，其實體 ID 會依新名稱改變，請檢查自動化）。
 - 協助驗證：若您有實驗性機型，請逐一試過所有模式，並開一則「Model verification report」
   issue，附上實際行為與診斷檔。
 - **需另外添購的硬體**（暖風機本身沒有網路或 RS-485 介面，缺一不可）：

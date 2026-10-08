@@ -21,7 +21,7 @@ All notable changes to this project are documented here. The format follows
 - Reconfigure flow: host, port, device id and model of an existing entry can be changed
   in one form (validated like the initial setup). The device (area, custom name) and
   the entities common to all models keep their ids. Changing the model recreates the
-  mode buttons (their entity ids may change, check automations) and removes entities
+  mode buttons (new entity ids that match the new names, check automations) and removes entities
   the new model does not have; a default entry name follows the new model.
 - Unit tests for the model profiles, translations and (optionally) the Home Assistant
   config flow and migration; a "Model verification report" issue form.

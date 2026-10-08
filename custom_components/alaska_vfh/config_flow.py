@@ -34,6 +34,7 @@ from .const import (
     MIN_SCAN_INTERVAL,
     REG_DEVICE_ID,
 )
+from .coordinator import async_reidentify_devices
 from .hub import AlaskaHubError, async_acquire_hub, async_release_hub
 from .models import DEFAULT_MODEL, INFO_BLOCK_COUNT, PROFILES, get_profile
 
@@ -160,12 +161,16 @@ class AlaskaConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    def _remove_model_entities(self, entry: ConfigEntry, model: str) -> None:
+    def _remove_model_entities(
+        self, entry: ConfigEntry, model: str, old_model: str
+    ) -> None:
         """Drop the registry entries that depend on the model, before the reload.
 
         Mode buttons are keyed by register value, which means something else on
         another model, so all of them are removed and recreated under ids that match
-        their new names. Other model-specific entities are removed when the new
+        their new names. Home Assistant would restore the old entity id of a removed
+        entry when the same unique id is registered again, so the unique id is
+        retired first. Other model-specific entities are removed when the new
         model does not provide them. Entities common to all models are kept.
         """
         profile = get_profile(model)
@@ -179,7 +184,13 @@ class AlaskaConfigFlow(ConfigFlow, domain=DOMAIN):
         prefix = f"{entry.entry_id}_"
         for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
             suffix = entity.unique_id.removeprefix(prefix)
-            if suffix.startswith("mode_") or not provided.get(suffix, True):
+            if suffix.startswith("mode_"):
+                registry.async_update_entity(
+                    entity.entity_id,
+                    new_unique_id=f"{prefix}retired_{suffix}_{old_model}",
+                )
+                registry.async_remove(entity.entity_id)
+            elif not provided.get(suffix, True):
                 registry.async_remove(entity.entity_id)
 
     async def async_step_reconfigure(
@@ -207,12 +218,14 @@ class AlaskaConfigFlow(ConfigFlow, domain=DOMAIN):
                 error = await _async_validate(self.hass, host, port, slave_id, model)
                 if error is None:
                     changes: dict[str, Any] = {}
-                    old_model = entry.data[CONF_MODEL]
+                    old_model = str(entry.data.get(CONF_MODEL))
                     if model != old_model:
-                        self._remove_model_entities(entry, model)
+                        self._remove_model_entities(entry, model, old_model)
                         # Keep a name the user chose; follow the default name
-                        if entry.title == get_profile(old_model).default_name:
+                        old = PROFILES.get(old_model)
+                        if old is not None and entry.title == old.default_name:
                             changes["title"] = get_profile(model).default_name
+                    async_reidentify_devices(self.hass, entry, unique_id)
                     return self.async_update_reload_and_abort(
                         entry,
                         unique_id=unique_id,
@@ -243,8 +256,14 @@ class AlaskaConfigFlow(ConfigFlow, domain=DOMAIN):
                             min=1, max=255, step=1, mode=NumberSelectorMode.BOX
                         )
                     ),
+                    # An unknown stored model gets no preselection
                     vol.Required(
-                        CONF_MODEL, default=current[CONF_MODEL]
+                        CONF_MODEL,
+                        default=(
+                            current[CONF_MODEL]
+                            if current.get(CONF_MODEL) in PROFILES
+                            else vol.UNDEFINED
+                        ),
                     ): _model_selector(),
                 }
             ),

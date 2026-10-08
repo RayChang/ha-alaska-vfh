@@ -12,7 +12,11 @@ from homeassistant.exceptions import (
 from homeassistant.helpers import device_registry as dr
 
 from .const import CONF_MODEL, DOMAIN
-from .coordinator import AlaskaConfigEntry, AlaskaCoordinator
+from .coordinator import (
+    AlaskaConfigEntry,
+    AlaskaCoordinator,
+    async_reidentify_devices,
+)
 from .hub import async_acquire_hub, async_release_hub
 from .models import DEFAULT_MODEL, PROFILES
 
@@ -64,17 +68,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: AlaskaConfigEntry) -> bo
         entry.runtime_data = coordinator
 
         device_info = coordinator.device_info
-        device_registry = dr.async_get(hass)
-        # A reconfigure can change the unique id that identifies the device; keep
-        # the existing device (area, custom name) instead of creating a second one
-        for device in dr.async_entries_for_config_entry(
-            device_registry, entry.entry_id
-        ):
-            if device.identifiers != device_info["identifiers"]:
-                device_registry.async_update_device(
-                    device.id, new_identifiers=device_info["identifiers"]
-                )
-        device_registry.async_get_or_create(
+        # Reconfigure moves the device to the new unique id; this is only a fallback
+        async_reidentify_devices(hass, entry, entry.unique_id or entry.entry_id)
+        dr.async_get(hass).async_get_or_create(
             config_entry_id=entry.entry_id,
             identifiers=device_info["identifiers"],
             name=device_info["name"],
