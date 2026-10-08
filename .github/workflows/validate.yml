@@ -43,7 +43,8 @@ jobs:
 
   tests-homeassistant:
     # pytest-homeassistant-custom-component 0.13.325 pins Home Assistant 2026.4.4
-    # (the minimum in hacs.json is 2026.4.0) and needs Python 3.14.
+    # (the minimum in hacs.json is 2026.4.0) and needs Python 3.14. pymodbus is pinned
+    # to the version required by the modbus component of that Home Assistant release.
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -54,5 +55,5 @@ jobs:
           python-version: "3.14"
       - name: Run Home Assistant level tests
         run: |
-          pip install pytest-homeassistant-custom-component==0.13.325 pymodbus
+          pip install pytest-homeassistant-custom-component==0.13.325 pymodbus==3.11.2
           pytest tests -q -o asyncio_mode=auto

@@ -64,7 +64,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: AlaskaConfigEntry) -> bo
         entry.runtime_data = coordinator
 
         device_info = coordinator.device_info
-        dr.async_get(hass).async_get_or_create(
+        device_registry = dr.async_get(hass)
+        # A reconfigure can change the unique id that identifies the device; keep
+        # the existing device (area, custom name) instead of creating a second one
+        for device in dr.async_entries_for_config_entry(
+            device_registry, entry.entry_id
+        ):
+            if device.identifiers != device_info["identifiers"]:
+                device_registry.async_update_device(
+                    device.id, new_identifiers=device_info["identifiers"]
+                )
+        device_registry.async_get_or_create(
             config_entry_id=entry.entry_id,
             identifiers=device_info["identifiers"],
             name=device_info["name"],

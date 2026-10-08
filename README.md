@@ -115,9 +115,11 @@ Copy the `custom_components/alaska_vfh` folder of this repository into the
    the same gateway share a single TCP connection.
 6. To change the gateway, device id or model of an existing device, use the
    three-dot menu of the entry → **Reconfigure**. The form is validated like the
-   initial setup. Entity ids are kept, but changing the model changes which mode
-   entities exist (entities of modes the new model lacks become unavailable and can
-   be deleted).
+   initial setup. The device (with its area and name) and the entities common to all
+   models keep their ids. **Changing the model recreates the mode buttons** (a mode
+   number means a different mode on another model) and removes entities the new
+   model does not have, so the entity ids of the mode buttons may change: check
+   automations and scripts that use them.
 7. Optional: **Configure** on the integration entry sets the polling interval
    (5–60 s, default 10 s).
 
@@ -178,6 +180,10 @@ Entity names are translated (English and Traditional Chinese).
 
 ## Troubleshooting
 
+- **Reconfigure cannot connect** to the same gateway under a new address (for example an
+  IP changed to a host name): a gateway that accepts a single TCP client refuses the
+  second connection while the device is loaded. Disable the device first, then
+  reconfigure and enable it again.
 - **Cannot connect** while adding: check host and port, and that the gateway accepts
   TCP connections from Home Assistant (some gateways allow only a limited number of
   simultaneous clients).
@@ -210,7 +216,7 @@ Entity names are translated (English and Traditional Chinese).
   不同模式），請務必選對機型，詳見 [docs/PROTOCOL.md](docs/PROTOCOL.md)。
 - 300SRP 另有風域、風向選擇與「清除濾網提示」按鈕；968 系列另有發熱體類型感測器。
 - 型號選錯時，模式會對應錯誤，「停止」按鈕可能無法停止暖風機（請用牆上面板停止）。可在整合項目的選單
-  選「重新設定」修改閘道、裝置編號與型號（實體 ID 不變，但可用的模式實體會隨型號改變）。
+  選「重新設定」修改閘道、裝置編號與型號（裝置與共用實體的 ID 保留；改變型號會重建模式按鈕，其實體 ID 可能改變，請檢查自動化）。
 - 協助驗證：若您有實驗性機型，請逐一試過所有模式，並開一則「Model verification report」
   issue，附上實際行為與診斷檔。
 - **需另外添購的硬體**（暖風機本身沒有網路或 RS-485 介面，缺一不可）：

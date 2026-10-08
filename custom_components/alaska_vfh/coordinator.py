@@ -133,9 +133,10 @@ class AlaskaCoordinator(DataUpdateCoordinator[HeaterState]):
         """Read the firmware version (and heater type) once during setup.
 
         The verified 300BKP reads the identification block 0..5 in one request.
-        Other models read single registers, because registers 3/4 may not exist
-        on them; a device Modbus exception on such a read only leaves the value unknown
-        (gateway exceptions 0x0A / 0x0B are timeouts and fail the setup).
+        Other models read single registers, because register 3 is not
+        documented on them; a device Modbus exception on such a read only leaves
+        the value unknown (gateway exceptions 0x0A / 0x0B are timeouts and fail
+        the setup).
         """
         profile = self.profile
         if profile.info_block_read:

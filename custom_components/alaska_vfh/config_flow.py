@@ -13,6 +13,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
@@ -159,6 +160,28 @@ class AlaskaConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    def _remove_model_entities(self, entry: ConfigEntry, model: str) -> None:
+        """Drop the registry entries that depend on the model, before the reload.
+
+        Mode buttons are keyed by register value, which means something else on
+        another model, so all of them are removed and recreated under ids that match
+        their new names. Other model-specific entities are removed when the new
+        model does not provide them. Entities common to all models are kept.
+        """
+        profile = get_profile(model)
+        provided = {
+            "filter_reset": profile.has_filter_reset,
+            "air_zone": profile.has_air_controls,
+            "air_direction": profile.has_air_controls,
+            "heater_type": profile.has_heater_type,
+        }
+        registry = er.async_get(self.hass)
+        prefix = f"{entry.entry_id}_"
+        for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+            suffix = entity.unique_id.removeprefix(prefix)
+            if suffix.startswith("mode_") or not provided.get(suffix, True):
+                registry.async_remove(entity.entity_id)
+
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -183,9 +206,17 @@ class AlaskaConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 error = await _async_validate(self.hass, host, port, slave_id, model)
                 if error is None:
+                    changes: dict[str, Any] = {}
+                    old_model = entry.data[CONF_MODEL]
+                    if model != old_model:
+                        self._remove_model_entities(entry, model)
+                        # Keep a name the user chose; follow the default name
+                        if entry.title == get_profile(old_model).default_name:
+                            changes["title"] = get_profile(model).default_name
                     return self.async_update_reload_and_abort(
                         entry,
                         unique_id=unique_id,
+                        **changes,
                         data_updates={
                             CONF_HOST: host,
                             CONF_PORT: port,

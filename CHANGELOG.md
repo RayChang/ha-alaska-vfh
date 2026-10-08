@@ -18,13 +18,16 @@ All notable changes to this project are documented here. The format follows
   bit-field system status (filter needs replacing, overheat, multiple faults).
 - 968 models: heater element type diagnostic sensor.
 - Diagnostics include the model and heater type.
+- Reconfigure flow: host, port, device id and model of an existing entry can be changed
+  in one form (validated like the initial setup). The device (area, custom name) and
+  the entities common to all models keep their ids. Changing the model recreates the
+  mode buttons (their entity ids may change, check automations) and removes entities
+  the new model does not have; a default entry name follows the new model.
 - Unit tests for the model profiles, translations and (optionally) the Home Assistant
   config flow and migration; a "Model verification report" issue form.
 
 ### Changed
 
-- Reconfigure flow: host, port, device id and model of an existing entry can be changed
-  in one form (validated like the initial setup); entity ids are kept.
 - The model step warns that a wrong model can make the Off button ineffective.
 - Write guards: air zone, air direction and filter reset are refused (translated error)
   on models without them or for out-of-range values; an unknown model in a config

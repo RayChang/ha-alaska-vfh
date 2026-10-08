@@ -15,8 +15,9 @@ import pytest
 pytest.importorskip("pytest_homeassistant_custom_component")
 
 from homeassistant.config_entries import ConfigEntryState  # noqa: E402
-from homeassistant.data_entry_flow import FlowResultType  # noqa: E402
+from homeassistant.data_entry_flow import FlowResultType, InvalidData  # noqa: E402
 from homeassistant.exceptions import HomeAssistantError  # noqa: E402
+from homeassistant.helpers import device_registry as dr  # noqa: E402
 from homeassistant.helpers import entity_registry as er  # noqa: E402
 from pytest_homeassistant_custom_component.common import (  # noqa: E402
     MockConfigEntry,
@@ -256,8 +257,9 @@ async def test_model_specific_writes_are_guarded(hass) -> None:
             coordinator.async_set_air_zone(2),
             coordinator.async_set_air_direction(1),
         ):
-            with pytest.raises(HomeAssistantError):
+            with pytest.raises(HomeAssistantError) as err:
                 await call
+            assert err.value.translation_key == "unsupported_function"
         hub.async_write_register.assert_not_awaited()
         await hass.config_entries.async_unload(entry.entry_id)
 
@@ -280,8 +282,9 @@ async def test_300srp_air_and_filter_writes(hass) -> None:
             coordinator.async_set_air_direction(0),
             coordinator.async_set_air_direction(7),
         ):
-            with pytest.raises(HomeAssistantError):
+            with pytest.raises(HomeAssistantError) as err:
                 await call
+            assert err.value.translation_key == "invalid_value"
         hub.async_write_register.assert_not_awaited()
         await hass.config_entries.async_unload(entry.entry_id)
 
@@ -330,13 +333,19 @@ async def _reconfigure(hass, entry, **changes) -> dict:
     return await hass.config_entries.flow.async_configure(result["flow_id"], data)
 
 
-async def test_reconfigure_host(hass) -> None:
+async def test_reconfigure_host_keeps_the_device(hass) -> None:
     hub = _fake_hub()
     with _patched(hub):
         entry = await _setup(hass, "300bkp", hub)
+        device_registry = dr.async_get(hass)
+        (device,) = dr.async_entries_for_config_entry(device_registry, entry.entry_id)
+        assert device.identifiers == {(DOMAIN, "gateway:4196:3")}
+        device_registry.async_update_device(
+            device.id, area_id="bath", name_by_user="My heater"
+        )
         before = _suffixes(hass, entry)
         ids_before = {
-            e.unique_id
+            e.entity_id: e.unique_id
             for e in er.async_entries_for_config_entry(
                 er.async_get(hass), entry.entry_id
             )
@@ -349,27 +358,133 @@ async def test_reconfigure_host(hass) -> None:
         assert entry.unique_id == "other-gateway:4196:3"
         assert entry.state is ConfigEntryState.LOADED
         assert _suffixes(hass, entry) == before
+        # same entity ids and unique ids: the registry was not touched
         assert {
-            e.unique_id
+            e.entity_id: e.unique_id
             for e in er.async_entries_for_config_entry(
                 er.async_get(hass), entry.entry_id
             )
         } == ids_before
+        # exactly one device: same id, area and name, identifier follows the unique id
+        (after,) = dr.async_entries_for_config_entry(device_registry, entry.entry_id)
+        assert after.id == device.id
+        assert after.area_id == "bath"
+        assert after.name_by_user == "My heater"
+        assert after.identifiers == {(DOMAIN, "other-gateway:4196:3")}
+        assert len(device_registry.devices) == 1
         await hass.config_entries.async_unload(entry.entry_id)
 
 
-async def test_reconfigure_model(hass) -> None:
+def _states_unavailable(hass, entry) -> list[str]:
+    return [
+        e.entity_id
+        for e in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
+        # the reset button is disabled by default and has no state
+        if e.disabled_by is None
+        and (
+            hass.states.get(e.entity_id) is None
+            or hass.states.get(e.entity_id).state == "unavailable"
+        )
+    ]
+
+
+async def test_reconfigure_model_300srp_to_300bkp(hass) -> None:
     hub = _fake_hub()
     with _patched(hub):
-        entry = await _setup(hass, "300bkp", hub)
+        entry = await _setup(hass, "300srp", hub, title="Bath")
+        assert _suffixes(hass, entry) >= {"air_zone", "filter_reset", "mode_10"}
+        result = await _reconfigure(hass, entry, model="300bkp")
+        await hass.async_block_till_done()
+        assert result["reason"] == "reconfigure_successful"
+        assert entry.runtime_data.profile.key == "300bkp"
+        # exactly the literal v0.1.0 entity set, nothing left over
+        assert _suffixes(hass, entry) == V010_SUFFIXES
+        assert _states_unavailable(hass, entry) == []
+        registry = er.async_get(hass)
+        assert (
+            registry.async_get_entity_id("button", DOMAIN, f"{entry.entry_id}_mode_12")
+            == "button.bath_mode_off"
+        )
+        # 300SRP value 10 is no longer a button
+        assert (
+            registry.async_get_entity_id("button", DOMAIN, f"{entry.entry_id}_mode_10")
+            is None
+        )
+        # the mode select now offers the 300BKP options
+        state = hass.states.get("select.bath_mode")
+        assert state.attributes["options"][-1] == "off"
+        assert "heat_low" not in state.attributes["options"]
+        await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_reconfigure_model_300bkp_to_968sk(hass) -> None:
+    hub = _fake_hub()
+    with _patched(hub):
+        entry = await _setup(hass, "300bkp", hub, title="Bath")
         result = await _reconfigure(hass, entry, model="968sk")
         await hass.async_block_till_done()
         assert result["reason"] == "reconfigure_successful"
-        assert entry.data["model"] == "968sk"
         assert entry.runtime_data.profile.key == "968sk"
         # the 968SK validates with a single-register read of register 0
         hub.async_read_holding_registers.assert_any_await(0, 1, 3)
-        assert "mode_9" in _suffixes(hass, entry)
+        expected = (
+            (V010_SUFFIXES - {f"mode_{n}" for n in (1, 2, 3, 4, 5, 6, 7, 12)})
+            | {f"mode_{n}" for n in (1, 2, 3, 4, 5, 6, 7, 8, 9, 12)}
+            | {"heater_type"}
+        )
+        assert _suffixes(hass, entry) == expected
+        assert _states_unavailable(hass, entry) == []
+        registry = er.async_get(hass)
+        assert (
+            registry.async_get_entity_id("button", DOMAIN, f"{entry.entry_id}_mode_12")
+            == "button.bath_mode_off"
+        )
+        # a name the user chose is kept
+        assert entry.title == "Bath"
+        await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_reconfigure_default_title_follows_model(hass) -> None:
+    hub = _fake_hub()
+    with _patched(hub):
+        entry = await _setup(hass, "300bkp", hub, title="Alaska 300BKP")
+        await _reconfigure(hass, entry, model="968sk")
+        await hass.async_block_till_done()
+        assert entry.title == "Alaska 968SK"
+        await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_reconfigure_without_model_change_keeps_registry(hass) -> None:
+    hub = _fake_hub()
+    with _patched(hub):
+        entry = await _setup(hass, "300srp", hub)
+        registry = er.async_get(hass)
+        before = {
+            e.entity_id: e.unique_id
+            for e in er.async_entries_for_config_entry(registry, entry.entry_id)
+        }
+        await _reconfigure(hass, entry, slave_id=4)
+        await hass.async_block_till_done()
+        after = {
+            e.entity_id: e.unique_id
+            for e in er.async_entries_for_config_entry(registry, entry.entry_id)
+        }
+        assert after == before
+        await hass.config_entries.async_unload(entry.entry_id)
+
+
+@pytest.mark.parametrize(
+    "changes", [{"port": 70000}, {"port": 0}, {"slave_id": 0}, {"slave_id": 256}]
+)
+async def test_reconfigure_out_of_range_values(hass, changes: dict) -> None:
+    """The number selectors reject the value before the step runs."""
+    hub = _fake_hub()
+    with _patched(hub):
+        entry = await _setup(hass, "300bkp", hub)
+        data_before = dict(entry.data)
+        with pytest.raises(InvalidData):
+            await _reconfigure(hass, entry, **changes)
+        assert dict(entry.data) == data_before
         await hass.config_entries.async_unload(entry.entry_id)
 
 
