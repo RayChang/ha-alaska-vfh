@@ -16,6 +16,13 @@
         },
         "title": "裝置資訊"
       },
+      "model": {
+        "title": "暖風機型號",
+        "description": "請選擇暖風機型號。除 300BKP 外，其他型號皆為實驗性：僅依原廠手冊實作，尚未在實機上驗證。",
+        "data": {
+          "model": "暖風機型號"
+        }
+      },
       "user": {
         "data": {
           "host": "閘道主機名或IP",
@@ -32,32 +39,50 @@
       }
     },
     "button": {
-      "mode_1": {
+      "mode_heat_high": {
         "name": "模式：高溫暖房"
       },
-      "mode_2": {
+      "mode_heat_dry": {
         "name": "模式：暖房乾燥"
       },
-      "mode_3": {
+      "mode_cool_fast": {
         "name": "模式：高速涼風"
       },
-      "mode_4": {
+      "mode_dry_eco": {
         "name": "模式：省電乾燥"
       },
-      "mode_5": {
+      "mode_vent_high": {
         "name": "模式：換氣強"
       },
-      "mode_6": {
+      "mode_vent_low": {
         "name": "模式：換氣弱"
       },
-      "mode_7": {
+      "mode_vent_24h": {
         "name": "模式：連續 24 小時換氣"
       },
-      "mode_12": {
+      "mode_off": {
         "name": "模式：停止"
+      },
+      "mode_heat": {
+        "name": "模式：暖房"
+      },
+      "mode_heat_medium": {
+        "name": "模式：中溫暖房"
+      },
+      "mode_heat_low": {
+        "name": "模式：低溫暖房"
+      },
+      "mode_cool": {
+        "name": "模式：涼風"
+      },
+      "mode_cool_slow": {
+        "name": "模式：低速涼風"
       },
       "reset": {
         "name": "重置"
+      },
+      "filter_reset": {
+        "name": "清除濾網提示"
       }
     },
     "number": {
@@ -69,14 +94,38 @@
       "mode": {
         "name": "模式",
         "state": {
+          "cool": "涼風",
           "cool_fast": "高速涼風",
+          "cool_slow": "低速涼風",
           "dry_eco": "省電乾燥",
+          "heat": "暖房",
           "heat_dry": "暖房乾燥",
           "heat_high": "高溫暖房",
+          "heat_low": "低溫暖房",
+          "heat_medium": "中溫暖房",
           "off": "停止",
           "vent_24h": "連續 24 小時換氣",
           "vent_high": "換氣強",
           "vent_low": "換氣弱"
+        }
+      },
+      "air_zone": {
+        "name": "風域",
+        "state": {
+          "off": "關閉",
+          "diffuse": "擴散",
+          "focus": "集中"
+        }
+      },
+      "air_direction": {
+        "name": "風向",
+        "state": {
+          "deg_65": "65°",
+          "deg_80": "80°",
+          "deg_95": "95°",
+          "deg_110": "110°",
+          "deg_125": "125°",
+          "swing": "自動擺頭（65–125°）"
         }
       }
     },
@@ -89,14 +138,24 @@
           "relay_fault": "電源繼電器故障"
         }
       },
+      "heater_type": {
+        "name": "發熱體類型",
+        "state": {
+          "ptc": "PTC",
+          "carbon": "碳素"
+        }
+      },
       "remaining_time": {
         "name": "剩餘時間"
       },
       "system_status": {
         "name": "系統狀態",
         "state": {
+          "filter_replace": "濾網需更換",
+          "multiple_faults": "多項異常",
           "ok": "正常",
           "overheat": "溫度過高／濾網需更換",
+          "overheat_only": "溫度過高",
           "temp_sensor_open": "溫度感測器開路"
         }
       },
@@ -129,6 +188,17 @@
           "scan_interval": "輪詢間隔（秒）"
         },
         "title": "選項"
+      }
+    }
+  },
+  "selector": {
+    "model": {
+      "options": {
+        "300bkp": "300BKP",
+        "300brp": "300BRP（實驗性）",
+        "300srp": "300SRP（實驗性）",
+        "968sr": "968SRN / 968SRP（實驗性）",
+        "968sk": "968SKN / 968SKP（實驗性）"
       }
     }
   }

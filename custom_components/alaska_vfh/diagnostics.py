@@ -10,6 +10,7 @@ from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 
 from .coordinator import AlaskaConfigEntry
+from .models import decode_heater_type
 
 TO_REDACT = {CONF_HOST}
 
@@ -25,7 +26,10 @@ async def async_get_config_entry_diagnostics(
             "data": async_redact_data(dict(entry.data), TO_REDACT),
             "options": dict(entry.options),
         },
+        "model": coordinator.profile.key,
         "firmware": coordinator.firmware,
+        "heater_type": decode_heater_type(coordinator.heater_type),
+        "heater_type_raw": coordinator.heater_type,
         "work_time": coordinator.work_time,
         "raw_registers": {
             str(address): value for address, value in coordinator.raw_registers.items()

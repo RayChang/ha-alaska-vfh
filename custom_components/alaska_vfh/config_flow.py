@@ -17,32 +17,37 @@ from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
 )
 
 from .const import (
+    CONF_MODEL,
     CONF_SCAN_INTERVAL,
     CONF_SLAVE_ID,
-    DEFAULT_NAME,
     DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
-    INFO_COUNT,
     MAX_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
     REG_DEVICE_ID,
 )
 from .hub import AlaskaHubError, async_acquire_hub, async_release_hub
+from .models import DEFAULT_MODEL, INFO_BLOCK_COUNT, PROFILES, get_profile
 
 
 class AlaskaConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Two-step flow: gateway, then heater."""
+    """Three-step flow: gateway, heater model, then heater."""
 
     VERSION = 1
+    MINOR_VERSION = 2
 
     def __init__(self) -> None:
         """Initialize the flow."""
         self._host = ""
         self._port = DEFAULT_PORT
+        self._model = DEFAULT_MODEL
 
     @staticmethod
     @callback
@@ -71,7 +76,7 @@ class AlaskaConfigFlow(ConfigFlow, domain=DOMAIN):
             if not errors:
                 self._host = host
                 self._port = port
-                return await self.async_step_device()
+                return await self.async_step_model()
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema(
@@ -90,6 +95,28 @@ class AlaskaConfigFlow(ConfigFlow, domain=DOMAIN):
                 }
             ),
             errors=errors,
+        )
+
+    async def async_step_model(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask which heater model is connected."""
+        if user_input is not None:
+            self._model = user_input[CONF_MODEL]
+            return await self.async_step_device()
+        return self.async_show_form(
+            step_id="model",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_MODEL, default=self._model): SelectSelector(
+                        SelectSelectorConfig(
+                            options=list(PROFILES),
+                            mode=SelectSelectorMode.DROPDOWN,
+                            translation_key="model",
+                        )
+                    )
+                }
+            ),
         )
 
     async def async_step_device(
@@ -112,6 +139,7 @@ class AlaskaConfigFlow(ConfigFlow, domain=DOMAIN):
                             CONF_HOST: self._host,
                             CONF_PORT: self._port,
                             CONF_SLAVE_ID: slave_id,
+                            CONF_MODEL: self._model,
                         },
                     )
                 errors[CONF_SLAVE_ID if error == "invalid_slave" else "base"] = error
@@ -121,7 +149,9 @@ class AlaskaConfigFlow(ConfigFlow, domain=DOMAIN):
                 {
                     vol.Required(
                         CONF_NAME,
-                        default=(user_input or {}).get(CONF_NAME, DEFAULT_NAME),
+                        default=(user_input or {}).get(
+                            CONF_NAME, get_profile(self._model).default_name
+                        ),
                     ): str,
                     vol.Required(
                         CONF_SLAVE_ID, default=(user_input or {}).get(CONF_SLAVE_ID, 1)
@@ -136,10 +166,15 @@ class AlaskaConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
     async def _async_validate(self, slave_id: int) -> str | None:
-        """Read registers 0..5; return an error key or None when the device answers."""
+        """Read the device id; return an error key or None when the device answers.
+
+        The verified 300BKP reads registers 0..5 in one request; other models read
+        register 0 only, because registers 3/4 may not exist on them.
+        """
+        count = INFO_BLOCK_COUNT if get_profile(self._model).info_block_read else 1
         hub = async_acquire_hub(self.hass, self._host, self._port)
         try:
-            registers = await hub.async_read_holding_registers(0, INFO_COUNT, slave_id)
+            registers = await hub.async_read_holding_registers(0, count, slave_id)
         except AlaskaHubError as err:
             return "cannot_connect" if err.kind == "connect" else "no_response"
         finally:

@@ -7,8 +7,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 
+from .const import CONF_MODEL
 from .coordinator import AlaskaConfigEntry, AlaskaCoordinator
 from .hub import async_acquire_hub, async_release_hub
+from .models import DEFAULT_MODEL
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
@@ -17,6 +19,17 @@ PLATFORMS: list[Platform] = [
     Platform.SELECT,
     Platform.SENSOR,
 ]
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: AlaskaConfigEntry) -> bool:
+    """Migrate older entries: 1.1 had no model and was always a 300BKP."""
+    if entry.version > 1:
+        return False
+    if entry.minor_version < 2:
+        hass.config_entries.async_update_entry(
+            entry, data={**entry.data, CONF_MODEL: DEFAULT_MODEL}, minor_version=2
+        )
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: AlaskaConfigEntry) -> bool:
