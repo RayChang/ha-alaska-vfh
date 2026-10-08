@@ -26,17 +26,43 @@ status sensors, and takes care of the quirky Modbus write rules of the device.
 | Alaska **300BKP** with RS-485 module | Verified on real hardware, firmware **2.11** |
 | Other 300 / 968 series models | **Untested.** Their mode lists and registers differ in places, so they may not work |
 
+## Hardware requirements
+
+The heater cannot talk to Home Assistant on its own: it has no network port and no
+RS-485 port. Besides the heater you need **two extra pieces of hardware, both bought
+separately**:
+
+| # | What you need | Why |
+|---|---------------|-----|
+| 1 | The manufacturer's **RS-485 control module** for the 300BKP (阿拉斯加 RS-485 控制模組) | An optional accessory that is not included with the heater. It plugs into the heater's controller with a ribbon cable and exposes the heater as a Modbus RTU device on an RS-485 bus. Ask Alaska or your dealer for it; see the [module manual](https://www.alaska.com.tw/pdf/69638) (Chinese). |
+| 2 | A **Modbus TCP to RTU gateway** (an RS-485 to Ethernet or Wi-Fi converter) | Home Assistant reaches the heater over the network with Modbus TCP, while the module only speaks Modbus RTU on a serial line. The gateway translates between the two. |
+
+```
+Alaska 300BKP ── ribbon cable ── RS-485 module ── D+ / D- ── gateway ── Ethernet / Wi-Fi ── Home Assistant
+                                              Modbus RTU, 9600 8N1        Modbus TCP
+```
+
+About the gateway:
+
+- Developed and tested with the **Waveshare RS485 TO ETH (B)**. Any gateway with a real
+  "Modbus TCP to RTU" protocol conversion mode should work.
+- A gateway that only offers a transparent serial tunnel (raw RTU frames over TCP) does
+  **not** work, and neither does a USB RS-485 adapter plugged into the Home Assistant
+  host: the integration speaks Modbus TCP only.
+- One gateway can serve several heaters on the same RS-485 bus.
+
 ## Prerequisites
 
-- The heater's **RS-485 control module** with its ribbon cable connected to the heater
-  controller.
-- A unique **device id (1–255)** set with the DIP switches on the module. An id of 0 is
-  the broadcast address and never answers.
-- A **Modbus TCP to RTU gateway** (for example a Waveshare RS485 to Ethernet adapter)
-  on the same network as Home Assistant, set to **9600 baud, 8N1**, protocol "Modbus
-  TCP to RTU", and reachable on a TCP port (commonly 4196 or 502).
+- The **RS-485 control module** installed, with its ribbon cable connected to the
+  heater controller.
+- A unique **device id (1–255)** set with the DIP switches on the module. The id is the
+  sum of the weights (128, 64, 32, 16, 8, 4, 2, 1) of the switches that are ON, so
+  "only switch 2 ON" means id 2. All switches OFF is id 0, the broadcast address, which
+  never answers.
+- The **gateway** on the same network as Home Assistant, set to **9600 baud, 8N1**,
+  protocol "Modbus TCP to RTU", and reachable on a TCP port (commonly 4196 or 502).
 - RS-485 wiring: D+ to D+ and D- to D- on every device, common ground, a 120 Ω
-  terminator at each end of long runs. Several heaters can share one bus.
+  terminator at each end of long runs.
 - Home Assistant **2026.4** or newer.
 
 ## Installation
@@ -137,8 +163,16 @@ Entity names are translated (English and Traditional Chinese).
 - **非官方專案**：與阿拉斯加（Alaska）及其製造商無關，「Alaska」名稱與標誌為其所有人之商標，
   此處僅用於標示相容的硬體。
 - 已在實機驗證：300BKP、韌體 2.11；其他 300／968 系列機型尚未測試。
-- 準備：RS-485 控制模組、以 DIP 開關設定的裝置編號（1–255，0 不會回應）、
-  設定為 9600 8N1 的 Modbus TCP 轉 RTU 閘道器。
+- **需另外添購的硬體**（暖風機本身沒有網路或 RS-485 介面，缺一不可）：
+  1. 原廠 **RS-485 控制模組**（選購配件，不隨機附贈；以排線接到暖風機主機板，
+     [模組說明書](https://www.alaska.com.tw/pdf/69638)）。
+  2. **Modbus TCP 轉 RTU 閘道器**（RS-485 轉乙太網路或 Wi-Fi 的轉換器）。模組只會在
+     RS-485 上講 Modbus RTU，HA 則是經由網路以 Modbus TCP 連線，必須靠閘道器轉換。
+     本專案以 Waveshare RS485 TO ETH (B) 開發與測試；僅提供透通模式的轉換器，或直接插在
+     HA 主機上的 USB RS-485 轉接器都不支援。
+- 設定：以模組上的 DIP 開關設定裝置編號（1–255，為撥到 ON 的各開關權重
+  128、64、32、16、8、4、2、1 的總和；全部 OFF 為 0，不會回應），閘道器設為
+  9600 8N1、「Modbus TCP to RTU」模式。
 - 安裝：HACS → 自訂儲存庫 → 加入本專案網址，類別選「Integration」；或手動複製
   `custom_components/alaska_vfh`。重啟後到「設定 → 裝置與服務 → 新增整合」搜尋
   **Alaska Bath Heater**，先填閘道器位址與連接埠，再填名稱與裝置編號。
